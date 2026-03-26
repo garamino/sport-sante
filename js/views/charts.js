@@ -275,6 +275,21 @@ function renderIntensiteChart(container, bikeData, colors, baseOptions) {
   });
 }
 
+function linearRegression(values) {
+  const n = values.length;
+  if (n < 2) return values.slice();
+  let sumX = 0, sumY = 0, sumXY = 0, sumX2 = 0;
+  for (let i = 0; i < n; i++) {
+    sumX += i;
+    sumY += values[i];
+    sumXY += i * values[i];
+    sumX2 += i * i;
+  }
+  const slope = (n * sumXY - sumX * sumY) / (n * sumX2 - sumX * sumX);
+  const intercept = (sumY - slope * sumX) / n;
+  return values.map((_, i) => parseFloat((intercept + slope * i).toFixed(2)));
+}
+
 function renderPerformanceChart(container, bikeData, colors) {
   // Filter sessions with all required data
   const validData = bikeData.filter(w => {
@@ -324,21 +339,6 @@ function renderPerformanceChart(container, bikeData, colors) {
       const fc = parseFloat(b.fcAvg) || 1;
       return (dist + dplus / 100) / (dureeH * (fc / fcMax));
     });
-  }
-
-  function linearRegression(values) {
-    const n = values.length;
-    if (n < 2) return values.slice();
-    let sumX = 0, sumY = 0, sumXY = 0, sumX2 = 0;
-    for (let i = 0; i < n; i++) {
-      sumX += i;
-      sumY += values[i];
-      sumXY += i * values[i];
-      sumX2 += i * i;
-    }
-    const slope = (n * sumXY - sumX * sumY) / (n * sumX2 - sumX * sumX);
-    const intercept = (sumY - slope * sumX) / n;
-    return values.map((_, i) => parseFloat((intercept + slope * i).toFixed(2)));
   }
 
   function updateMetrics(indices, fcValues) {
