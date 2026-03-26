@@ -66,6 +66,13 @@ body {
   text-transform: uppercase;
 }
 
+.header-version {
+  font-size: 10px;
+  color: var(--text-secondary);
+  opacity: 0.6;
+  font-weight: 400;
+}
+
 #btn-logout {
   background: none;
   border: none;

@@ -276,7 +276,7 @@ function renderPerformanceChart(container, bikeData, colors) {
   // Filter sessions with all required data
   const validData = bikeData.filter(w => {
     const b = w.bikeData;
-    return b.fcAvg && b.duration && b.distance && b.duration > 0;
+    return b.fcAvg && b.durationMinutes && b.distanceKm && b.durationMinutes > 0;
   });
 
   if (validData.length === 0) {
@@ -311,9 +311,9 @@ function renderPerformanceChart(container, bikeData, colors) {
   function calcIndices(fcMax) {
     return validData.map(w => {
       const b = w.bikeData;
-      const dist = parseFloat(b.distance) || 0;
-      const dplus = parseFloat(b.dplus) || 0;
-      const dureeH = (parseFloat(b.duration) || 1) / 60;
+      const dist = parseFloat(b.distanceKm) || 0;
+      const dplus = parseFloat(b.elevationGain) || 0;
+      const dureeH = (parseFloat(b.durationMinutes) || 1) / 60;
       const fc = parseFloat(b.fcAvg) || 1;
       return (dist + dplus / 100) / (dureeH * (fc / fcMax));
     });
