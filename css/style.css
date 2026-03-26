@@ -84,6 +84,16 @@ body {
   color: var(--accent);
   border-color: var(--accent);
 }
+.header-version.has-update {
+  opacity: 1;
+  color: var(--success);
+  border-color: var(--success);
+  animation: pulse-update 2s ease-in-out infinite;
+}
+@keyframes pulse-update {
+  0%, 100% { opacity: 0.8; }
+  50% { opacity: 1; }
+}
 
 #btn-logout {
   background: none;

@@ -43,10 +43,16 @@ self.addEventListener('activate', (event) => {
 
 // Fetch: network-first for everything (offline fallback to cache)
 self.addEventListener('fetch', (event) => {
+  const url = new URL(event.request.url);
+
+  // version.js: always bypass HTTP cache
+  const fetchOptions = url.pathname.endsWith('version.js')
+    ? { cache: 'no-store' }
+    : {};
+
   event.respondWith(
-    fetch(event.request)
+    fetch(event.request, fetchOptions)
       .then(response => {
-        // Cache successful responses for offline use
         if (response.ok) {
           const clone = response.clone();
           caches.open(CACHE_NAME).then(cache => cache.put(event.request, clone));

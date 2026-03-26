@@ -17,6 +17,7 @@ export async function updateHeader() {
       if (!versionListenerAttached) {
         versionListenerAttached = true;
         versionEl.addEventListener('click', forceUpdate);
+        checkForUpdate(versionEl);
       }
     }
 
@@ -34,6 +35,21 @@ export async function updateHeader() {
   }
 }
 
+async function checkForUpdate(btn) {
+  try {
+    const resp = await fetch('js/version.js', { cache: 'no-store' });
+    const text = await resp.text();
+    const match = text.match(/APP_VERSION\s*=\s*'([^']+)'/);
+    if (match && match[1] !== APP_VERSION) {
+      btn.textContent = `v${APP_VERSION} ⬆`;
+      btn.classList.add('has-update');
+      btn.title = `Mise à jour disponible : v${match[1]}`;
+    }
+  } catch {
+    // offline or error, ignore
+  }
+}
+
 async function forceUpdate() {
   const btn = document.getElementById('header-version');
   if (!btn || btn.classList.contains('updating')) return;
@@ -42,7 +58,6 @@ async function forceUpdate() {
   btn.textContent = 'Mise à jour...';
 
   try {
-    // 1. Unregister current SW and clear all caches
     const registrations = await navigator.serviceWorker.getRegistrations();
     for (const reg of registrations) {
       await reg.unregister();
@@ -51,7 +66,6 @@ async function forceUpdate() {
     const keys = await caches.keys();
     await Promise.all(keys.map(k => caches.delete(k)));
 
-    // 2. Hard reload from network
     btn.textContent = 'Rechargement...';
     window.location.reload();
   } catch (err) {
