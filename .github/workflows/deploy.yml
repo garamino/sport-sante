@@ -5,7 +5,7 @@ on:
     branches: [main]
 
 permissions:
-  contents: read
+  contents: write
   pages: write
   id-token: write
 
@@ -21,13 +21,17 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
-      - name: Stamp version
+      - name: Stamp version and commit
         run: |
           VERSION="$(date -u +%Y.%m.%d)-$(git rev-parse --short HEAD)"
-          sed -i "s|APP_VERSION = 'DEV'|APP_VERSION = '${VERSION}'|" js/version.js
-          echo "Version stamped: $VERSION"
-          echo "--- version.js content ---"
+          echo "// Auto-updated by deploy workflow" > js/version.js
+          echo "export const APP_VERSION = '${VERSION}';" >> js/version.js
           cat js/version.js
+          git config user.name "github-actions"
+          git config user.email "github-actions@github.com"
+          git add js/version.js
+          git diff --cached --quiet && echo "No change" || git commit -m "chore: stamp version ${VERSION} [skip ci]"
+          git push
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
