@@ -1,19 +1,22 @@
-import { today, getWeekNumber, getPhase, showToast } from '../utils.js';
-import { getUserProfile, saveUserProfile, getWeekly, saveWeekly, getAllWorkouts } from '../db.js';
+import { today, formatDateFR, addDays, getWeekNumber, getPhase, showToast } from '../utils.js';
+import { getUserProfile, saveUserProfile, getWeekly, saveWeekly, getAllWorkouts, getWorkout, saveWorkout } from '../db.js';
 
-export async function render(container) {
+let currentDate = null;
+
+export async function render(container, resetDate = true) {
+  if (resetDate || !currentDate) currentDate = today();
   container.innerHTML = '<div class="spinner"></div>';
 
   try {
     const profile = await getUserProfile();
-    const todayStr = today();
-    const weekNum = profile?.startDate ? getWeekNumber(profile.startDate, todayStr) : 1;
+    const weekNum = profile?.startDate ? getWeekNumber(profile.startDate, currentDate) : 1;
     const phase = getPhase(weekNum);
     const weekId = `W${String(weekNum).padStart(2, '0')}`;
 
-    const [weekly, allWorkouts] = await Promise.all([
+    const [weekly, allWorkouts, dayData] = await Promise.all([
       getWeekly(weekId).catch(() => null),
       getAllWorkouts().catch(() => []),
+      getWorkout(currentDate).catch(() => null),
     ]);
 
     // Count this week's sessions
@@ -26,7 +29,25 @@ export async function render(container) {
     const prevWeekly = weekNum > 1 ? await getWeekly(prevWeekId).catch(() => null) : null;
 
     container.innerHTML = `
-      <div class="section-title">Semaine ${weekNum} — ${phase}</div>
+      <div class="date-nav">
+        <button id="weight-prev">‹</button>
+        <span class="current-date">${formatDateFR(currentDate)}</span>
+        <button id="weight-next">›</button>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Pesée du jour</div>
+        <div style="display:flex;align-items:center;gap:12px">
+          <div class="form-group" style="flex:1;margin-bottom:0">
+            <input type="number" id="daily-weight" step="0.1" min="40" max="150"
+                   placeholder="Ex: 59.5" value="${dayData?.weight || ''}">
+          </div>
+          <span style="font-size:14px;color:var(--text-secondary)">kg</span>
+        </div>
+        <button class="btn btn-success btn-small" id="save-daily-weight" style="margin-top:12px;width:100%">Enregistrer</button>
+      </div>
+
+      <div class="section-title" style="margin-top:20px">Semaine ${weekNum} — ${phase}</div>
 
       <div class="week-summary">
         <div class="week-summary-item">
@@ -37,35 +58,36 @@ export async function render(container) {
           <div class="week-summary-value" style="color:var(--accent)">${velo.length}/2</div>
           <div class="week-summary-label">Vélo</div>
         </div>
-      </div>
-
-      <div class="card">
-        <div class="card-title">Pesée hebdomadaire</div>
-        <p style="font-size:12px;color:var(--text-secondary);margin-bottom:12px">
-          1× par semaine, le matin à jeun
-        </p>
-        <div class="form-group">
-          <label>Poids (kg)</label>
-          <input type="number" id="weekly-weight" step="0.1" min="40" max="150"
-                 placeholder="Ex: 59.5" value="${weekly?.weight || ''}">
+        <div class="week-summary-item">
+          <div class="week-summary-value" style="color:var(--accent)">${weekly?.weight ? weekly.weight + ' kg' : '—'}</div>
+          <div class="week-summary-label">Poids semaine</div>
         </div>
-        ${prevWeekly?.weight ? `
-          <p style="font-size:13px;color:var(--text-secondary)">
-            Semaine précédente : ${prevWeekly.weight} kg
-            ${weekly?.weight ? ` · Delta : <strong style="color:${(weekly.weight - prevWeekly.weight) >= 0 ? 'var(--success)' : 'var(--danger)'}">
-              ${(weekly.weight - prevWeekly.weight) > 0 ? '+' : ''}${(weekly.weight - prevWeekly.weight).toFixed(1)} kg
-            </strong>` : ''}
-          </p>
-        ` : ''}
-
-        <button class="btn btn-success" id="save-weekly" style="margin-top:12px">Enregistrer</button>
       </div>
+
+      ${prevWeekly?.weight && weekly?.weight ? `
+        <div class="card" style="text-align:center">
+          <span style="font-size:13px;color:var(--text-secondary)">Delta semaine : </span>
+          <strong style="color:${(weekly.weight - prevWeekly.weight) >= 0 ? 'var(--success)' : 'var(--danger)'}">
+            ${(weekly.weight - prevWeekly.weight) > 0 ? '+' : ''}${(weekly.weight - prevWeekly.weight).toFixed(1)} kg
+          </strong>
+        </div>
+      ` : ''}
     `;
 
-    // Save
-    document.getElementById('save-weekly').addEventListener('click', async (e) => {
+    // Date navigation
+    document.getElementById('weight-prev').addEventListener('click', () => {
+      currentDate = addDays(currentDate, -1);
+      render(container, false);
+    });
+    document.getElementById('weight-next').addEventListener('click', () => {
+      currentDate = addDays(currentDate, 1);
+      render(container, false);
+    });
+
+    // Save daily weight
+    document.getElementById('save-daily-weight').addEventListener('click', async (e) => {
       const btn = e.target;
-      const weight = parseFloat(document.getElementById('weekly-weight').value);
+      const weight = parseFloat(document.getElementById('daily-weight').value);
       if (!weight) {
         showToast('Indique ton poids');
         return;
@@ -74,9 +96,13 @@ export async function render(container) {
       btn.disabled = true;
       btn.textContent = 'Enregistrement...';
 
-      const delta = prevWeekly?.weight ? Math.round((weight - prevWeekly.weight) * 10) / 10 : 0;
-
       try {
+        // Save weight in the workout document for this day
+        const existingDay = dayData || {};
+        await saveWorkout(currentDate, { ...existingDay, weight });
+
+        // Also update the weekly summary with the latest weight
+        const delta = prevWeekly?.weight ? Math.round((weight - prevWeekly.weight) * 10) / 10 : 0;
         await saveWeekly(weekId, {
           week: weekNum,
           phase,
@@ -88,8 +114,9 @@ export async function render(container) {
           bikeTotal: 2,
         });
         await saveUserProfile({ currentWeight: weight });
+
         showToast('Pesée enregistrée ✓');
-        render(container);
+        render(container, false);
       } catch {
         showToast('Erreur — réessaie');
         btn.disabled = false;
