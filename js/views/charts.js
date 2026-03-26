@@ -184,6 +184,7 @@ async function renderChart(type) {
         <div class="chart-subtabs">
           <button class="chart-subtab active" data-sub="intensite">Intensité</button>
           <button class="chart-subtab" data-sub="performance">Performance</button>
+          <button class="chart-subtab" data-sub="efficacite">Efficacité</button>
         </div>
         <div id="bike-chart-area"></div>
       `;
@@ -214,8 +215,10 @@ function renderBikeSubChart(sub, bikeData, colors, baseOptions) {
 
   if (sub === 'intensite') {
     renderIntensiteChart(container, bikeData, colors, baseOptions);
-  } else {
+  } else if (sub === 'performance') {
     renderPerformanceChart(container, bikeData, colors);
+  } else {
+    renderEfficaciteChart(container, bikeData, colors, baseOptions);
   }
 }
 
@@ -481,6 +484,120 @@ function renderPerformanceChart(container, bikeData, colors) {
     perfChartInstance.update();
 
     updateMetrics(indices, fcValues);
+  });
+}
+
+function renderEfficaciteChart(container, bikeData, colors, baseOptions) {
+  const validData = bikeData.filter(w => {
+    const b = w.bikeData;
+    return b.wattsAvg && b.fcAvg && b.fcAvg > 0;
+  });
+
+  if (validData.length === 0) {
+    container.innerHTML = `
+      <div class="empty-state">
+        <p>Données insuffisantes</p>
+        <p style="font-size:13px;color:var(--text-secondary)">Il faut au minimum Watts et FC pour calculer l'efficacité.</p>
+      </div>
+    `;
+    return;
+  }
+
+  const labels = validData.map(w => {
+    const d = new Date(w.date + 'T00:00:00');
+    return d.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' });
+  });
+
+  const effValues = validData.map(w => {
+    return parseFloat((w.bikeData.wattsAvg / w.bikeData.fcAvg).toFixed(3));
+  });
+
+  // Trend line
+  const trend = linearRegression(effValues);
+
+  // Metric cards
+  const first = effValues[0];
+  const last = effValues[effValues.length - 1];
+  const delta = last - first;
+  const deltaSign = delta >= 0 ? '+' : '';
+  const deltaColor = delta >= 0 ? colors.perfGreen : colors.perfRed;
+
+  container.innerHTML = `
+    <div class="perf-metrics">
+      <div class="perf-metric-card">
+        <div class="perf-metric-value">${first.toFixed(2)}</div>
+        <div class="perf-metric-label">1ère session</div>
+      </div>
+      <div class="perf-metric-card">
+        <div class="perf-metric-value">${last.toFixed(2)}</div>
+        <div class="perf-metric-delta" style="color:${deltaColor}">${deltaSign}${delta.toFixed(2)}</div>
+        <div class="perf-metric-label">Dernière</div>
+      </div>
+      <div class="perf-metric-card">
+        <div class="perf-metric-value">${(effValues.reduce((a, b) => a + b, 0) / effValues.length).toFixed(2)}</div>
+        <div class="perf-metric-label">Moyenne</div>
+      </div>
+    </div>
+    <div class="chart-container"><canvas id="efficacite-chart"></canvas></div>
+  `;
+
+  const canvas = document.getElementById('efficacite-chart');
+
+  chartInstance = new Chart(canvas.getContext('2d'), {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [
+        {
+          label: 'Efficacité (W/bpm)',
+          data: effValues,
+          borderColor: colors.accent,
+          backgroundColor: colors.accent + '25',
+          fill: true,
+          tension: 0.3,
+          pointRadius: 5,
+          pointBackgroundColor: colors.accent,
+        },
+        {
+          label: 'Tendance',
+          data: trend,
+          borderColor: colors.accent,
+          borderDash: [6, 4],
+          borderWidth: 2,
+          pointRadius: 0,
+          fill: false,
+          tension: 0,
+        },
+      ],
+    },
+    options: {
+      ...baseOptions,
+      plugins: {
+        legend: {
+          display: true,
+          labels: {
+            color: colors.text,
+            usePointStyle: true,
+            filter: (item) => item.text !== 'Tendance',
+          },
+        },
+        tooltip: {
+          callbacks: {
+            label: function(ctx) {
+              if (ctx.dataset.label === 'Tendance') return null;
+              return `${ctx.dataset.label}: ${ctx.parsed.y.toFixed(3)}`;
+            },
+          },
+        },
+      },
+      scales: {
+        x: baseOptions.scales.x,
+        y: {
+          ...baseOptions.scales.y,
+          title: { display: true, text: 'Watts / FC', color: colors.text },
+        },
+      },
+    },
   });
 }
 
