@@ -22,11 +22,28 @@ export async function render(container, resetDate = true) {
     // Check if an extra activity was added (or existed in DB)
     const hasExtraVelo = existing?.extraActivities?.includes('velo');
 
+    // Separate done/not-done exercises for ordering
+    const doneExercises = [];
+    const todoExercises = [];
+    if (schedule.type === 'muscu') {
+      exercises.forEach((ex, i) => {
+        const saved = existing?.exercises?.find(e => e.id === ex.id);
+        if (saved?.done) doneExercises.push(i);
+        else todoExercises.push(i);
+      });
+    }
+
     container.innerHTML = `
       <div class="date-nav">
         <button id="prev-day">‹</button>
         <span class="current-date">${formatDateFR(currentDate)}</span>
         <button id="next-day">›</button>
+        <input type="date" id="date-picker" value="${currentDate}" class="date-picker-hidden">
+        <button id="open-calendar" class="date-nav-calendar" title="Choisir une date">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/>
+          </svg>
+        </button>
       </div>
 
       <div class="card" style="text-align:center;padding:10px">
@@ -34,7 +51,7 @@ export async function render(container, resetDate = true) {
         <span style="font-size:12px;color:var(--text-secondary);margin-left:8px">${phase} · S${weekNum}</span>
       </div>
 
-      ${schedule.type === 'muscu' ? renderMuscu(exercises, existing) : ''}
+      ${schedule.type === 'muscu' ? renderMuscu(exercises, existing, doneExercises, todoExercises) : ''}
       ${schedule.type === 'velo' ? renderVelo(existing) : ''}
       ${schedule.type === 'rest' ? renderRest() : ''}
 
@@ -73,6 +90,19 @@ export async function render(container, resetDate = true) {
     document.getElementById('next-day').addEventListener('click', () => {
       currentDate = addDays(currentDate, 1);
       render(container, false);
+    });
+
+    // Calendar picker
+    const datePicker = document.getElementById('date-picker');
+    const calendarBtn = document.getElementById('open-calendar');
+    calendarBtn.addEventListener('click', () => {
+      datePicker.showPicker();
+    });
+    datePicker.addEventListener('change', () => {
+      if (datePicker.value) {
+        currentDate = datePicker.value;
+        render(container, false);
+      }
     });
 
     // Add activity button
@@ -176,8 +206,12 @@ function buildSaveData(schedule, exercises, weekNum, phase, existing) {
   return data;
 }
 
-function renderMuscu(exercises, existing) {
-  return exercises.map((ex, i) => {
+function renderMuscu(exercises, existing, doneExercises, todoExercises) {
+  // Render done exercises first, then todo
+  const orderedIndices = [...doneExercises, ...todoExercises];
+
+  return orderedIndices.map(i => {
+    const ex = exercises[i];
     const saved = existing?.exercises?.find(e => e.id === ex.id);
     const done = saved?.done || false;
     const note = saved?.note || '';

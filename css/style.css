@@ -741,6 +741,33 @@ textarea {
   font-weight: 600;
 }
 
+.date-nav-calendar {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  color: var(--text-secondary);
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-left: 4px;
+  transition: color 0.2s, border-color 0.2s;
+}
+.date-nav-calendar:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+.date-picker-hidden {
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
+  pointer-events: none;
+}
+
 /* ===== Toast ===== */
 .toast {
   position: fixed;
