@@ -24,8 +24,10 @@ jobs:
       - name: Stamp version
         run: |
           VERSION="$(date -u +%Y.%m.%d)-$(git rev-parse --short HEAD)"
-          sed -i "s/APP_VERSION = 'DEV'/APP_VERSION = '${VERSION}'/" js/version.js
+          sed -i "s|APP_VERSION = 'DEV'|APP_VERSION = '${VERSION}'|" js/version.js
           echo "Version stamped: $VERSION"
+          echo "--- version.js content ---"
+          cat js/version.js
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
