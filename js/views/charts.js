@@ -305,6 +305,10 @@ function renderPerformanceChart(container, bikeData, colors) {
       </label>
       <input type="range" id="fcmax-slider" class="quality-slider" min="170" max="210" value="${defaultFCmax}" step="1">
     </div>
+    <div class="formula-box">
+      <span class="formula-label">Formule</span>
+      <code>indice = (distance + D÷100) ÷ (durée_h × FC÷FC<sub>max</sub>)</code>
+    </div>
   `;
 
   const canvas = document.getElementById('perf-chart');
@@ -445,6 +449,19 @@ function renderPerformanceChart(container, bikeData, colors) {
             label: function(ctx) {
               if (ctx.dataset.label === 'Tendance') return null;
               return `${ctx.dataset.label}: ${ctx.parsed.y.toFixed(1)}`;
+            },
+            afterBody: function(tooltipItems) {
+              const idx = tooltipItems[0]?.dataIndex;
+              if (idx === undefined) return '';
+              const b = validData[idx]?.bikeData;
+              if (!b) return '';
+              const lines = [];
+              lines.push('───────────');
+              if (b.distanceKm) lines.push(`Distance: ${b.distanceKm} km`);
+              if (b.wattsAvg) lines.push(`Watts moy: ${b.wattsAvg} W`);
+              if (b.durationMinutes) lines.push(`Durée: ${b.durationMinutes} min`);
+              if (b.elevationGain) lines.push(`D+: ${b.elevationGain} m`);
+              return lines;
             },
           },
         },
