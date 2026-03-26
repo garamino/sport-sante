@@ -206,6 +206,33 @@ async function renderChart(type) {
   }
 }
 
+let currentPeriod = '3m';
+
+function filterByPeriod(data, period) {
+  if (period === 'all') return data;
+  const now = new Date();
+  const months = period === '3m' ? 3 : 6;
+  const cutoff = new Date(now.getFullYear(), now.getMonth() - months, now.getDate());
+  const cutoffStr = cutoff.toISOString().slice(0, 10);
+  return data.filter(w => w.date >= cutoffStr);
+}
+
+function renderPeriodButtons(container, bikeData, colors, baseOptions, sub) {
+  const wrapper = document.createElement('div');
+  wrapper.className = 'period-buttons';
+  wrapper.innerHTML = ['3m', '6m', 'all'].map(p =>
+    `<button class="period-btn ${p === currentPeriod ? 'active' : ''}" data-period="${p}">${p === 'all' ? 'Tout' : p === '3m' ? '3 mois' : '6 mois'}</button>`
+  ).join('');
+  container.prepend(wrapper);
+
+  wrapper.querySelectorAll('.period-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      currentPeriod = btn.dataset.period;
+      renderBikeSubChart(sub, bikeData, colors, baseOptions);
+    });
+  });
+}
+
 function renderBikeSubChart(sub, bikeData, colors, baseOptions) {
   if (chartInstance) { chartInstance.destroy(); chartInstance = null; }
   if (perfChartInstance) { perfChartInstance.destroy(); perfChartInstance = null; }
@@ -216,9 +243,11 @@ function renderBikeSubChart(sub, bikeData, colors, baseOptions) {
   if (sub === 'intensite') {
     renderIntensiteChart(container, bikeData, colors, baseOptions);
   } else if (sub === 'performance') {
-    renderPerformanceChart(container, bikeData, colors);
+    renderPerformanceChart(container, filterByPeriod(bikeData, currentPeriod), colors);
+    renderPeriodButtons(container, bikeData, colors, baseOptions, sub);
   } else {
-    renderEfficaciteChart(container, bikeData, colors, baseOptions);
+    renderEfficaciteChart(container, filterByPeriod(bikeData, currentPeriod), colors, baseOptions);
+    renderPeriodButtons(container, bikeData, colors, baseOptions, sub);
   }
 }
 

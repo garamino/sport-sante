@@ -592,6 +592,31 @@ textarea {
   font-weight: 700;
 }
 
+/* ===== Period Buttons ===== */
+.period-buttons {
+  display: flex;
+  justify-content: center;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+
+.period-btn {
+  padding: 5px 14px;
+  font-size: 12px;
+  font-weight: 600;
+  border: 1px solid var(--border);
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  border-radius: 16px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.period-btn.active {
+  background: var(--accent);
+  color: var(--bg-primary);
+  border-color: var(--accent);
+}
+
 /* ===== Formula Box ===== */
 .formula-box {
   margin-top: 10px;
