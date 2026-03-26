@@ -167,7 +167,7 @@ async function renderChart(type) {
 
     } else if (type === 'bike') {
       const workouts = await getAllWorkouts();
-      const bikeData = workouts.filter(w => w.dayType === 'velo' && w.bikeData);
+      const bikeData = workouts.filter(w => w.bikeData);
 
       if (bikeData.length === 0) {
         area.innerHTML = `
