@@ -23,7 +23,18 @@ jobs:
       - uses: actions/checkout@v4
       - name: Stamp version and commit
         run: |
-          VERSION="$(date -u +%Y.%m.%d)-$(git rev-parse --short HEAD)"
+          TODAY="$(date -u +%Y.%m.%d)"
+          # Read current version to extract counter
+          CURRENT=$(grep -oP "APP_VERSION = '\K[^']+" js/version.js || echo "")
+          CURRENT_DATE=$(echo "$CURRENT" | grep -oP '^\d{4}\.\d{2}\.\d{2}' || echo "")
+          CURRENT_NUM=$(echo "$CURRENT" | grep -oP '\d+$' || echo "0")
+          # Increment or reset counter
+          if [ "$CURRENT_DATE" = "$TODAY" ]; then
+            NUM=$((CURRENT_NUM + 1))
+          else
+            NUM=1
+          fi
+          VERSION="${TODAY}-$(printf '%03d' $NUM)"
           echo "// Auto-updated by deploy workflow" > js/version.js
           echo "export const APP_VERSION = '${VERSION}';" >> js/version.js
           cat js/version.js
