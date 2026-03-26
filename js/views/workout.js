@@ -19,6 +19,9 @@ export async function render(container, resetDate = true) {
     // Load existing data for this date
     const existing = await getWorkout(currentDate);
 
+    // Check if an extra activity was added (or existed in DB)
+    const hasExtraVelo = existing?.extraActivities?.includes('velo');
+
     container.innerHTML = `
       <div class="date-nav">
         <button id="prev-day">‹</button>
@@ -35,11 +38,31 @@ export async function render(container, resetDate = true) {
       ${schedule.type === 'velo' ? renderVelo(existing) : ''}
       ${schedule.type === 'rest' ? renderRest() : ''}
 
-      ${schedule.type !== 'rest' ? `
-        <button class="btn btn-success" id="save-workout" style="margin-top:12px">
-          Enregistrer
-        </button>
+      ${/* Extra vélo section (on non-vélo days) */
+        schedule.type !== 'velo' && hasExtraVelo ? `
+        <div id="extra-velo-section">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-top:16px;margin-bottom:4px">
+            <span class="card-title" style="margin:0">Activité ajoutée</span>
+            <button class="btn btn-small" id="remove-extra-velo" style="color:var(--danger);background:none;border:1px solid var(--danger);padding:4px 10px;font-size:12px">
+              ✕ Retirer vélo
+            </button>
+          </div>
+          ${renderVelo(existing)}
+        </div>
       ` : ''}
+
+      ${/* Add activity button (when no vélo scheduled AND no extra vélo yet) */
+        schedule.type !== 'velo' && !hasExtraVelo ? `
+        <div id="add-activity-area" style="margin-top:16px">
+          <button class="btn btn-secondary" id="add-activity-btn" style="gap:6px">
+            <span style="font-size:18px">+</span> Ajouter une activité
+          </button>
+        </div>
+      ` : ''}
+
+      <button class="btn btn-success" id="save-workout" style="margin-top:12px">
+        Enregistrer
+      </button>
     `;
 
     // Date navigation
@@ -52,6 +75,40 @@ export async function render(container, resetDate = true) {
       render(container, false);
     });
 
+    // Add activity button
+    const addBtn = document.getElementById('add-activity-btn');
+    if (addBtn) {
+      addBtn.addEventListener('click', () => {
+        addBtn.parentElement.innerHTML = `
+          <div class="card" style="text-align:center">
+            <p style="font-size:13px;color:var(--text-secondary);margin-bottom:10px">Quelle activité ajouter ?</p>
+            <button class="btn btn-primary btn-small" id="add-velo-btn" style="width:auto;margin:0 auto">
+              🚴 Vélo
+            </button>
+          </div>
+        `;
+        document.getElementById('add-velo-btn').addEventListener('click', () => {
+          // Re-render with extra vélo flag stored temporarily
+          saveWorkout(currentDate, {
+            ...buildSaveData(schedule, exercises, weekNum, phase, existing),
+            extraActivities: ['velo'],
+          }).then(() => render(container, false));
+        });
+      });
+    }
+
+    // Remove extra vélo
+    const removeBtn = document.getElementById('remove-extra-velo');
+    if (removeBtn) {
+      removeBtn.addEventListener('click', async () => {
+        const data = buildSaveData(schedule, exercises, weekNum, phase, existing);
+        data.extraActivities = [];
+        data.bikeData = null;
+        await saveWorkout(currentDate, data);
+        render(container, false);
+      });
+    }
+
     // Save
     const saveBtn = document.getElementById('save-workout');
     if (saveBtn) {
@@ -59,30 +116,18 @@ export async function render(container, resetDate = true) {
         saveBtn.disabled = true;
         saveBtn.textContent = 'Enregistrement...';
 
-        const data = {
-          week: weekNum,
-          phase,
-          dayType: schedule.type,
-          muscleGroup: schedule.label,
-        };
+        const data = buildSaveData(schedule, exercises, weekNum, phase, existing);
 
-        if (schedule.type === 'muscu') {
-          data.exercises = exercises.map((ex, i) => ({
-            id: ex.id,
-            name: ex.name,
-            sets: ex.sets,
-            reps: ex.reps,
-            done: document.getElementById(`ex-done-${i}`)?.checked || false,
-            note: document.getElementById(`ex-note-${i}`)?.value || '',
-          }));
-        } else if (schedule.type === 'velo') {
+        // Include extra vélo data if present
+        if (hasExtraVelo || schedule.type === 'velo') {
           data.bikeData = {
-            fcAvg: parseInt(document.getElementById('bike-fc').value) || 0,
-            wattsAvg: parseInt(document.getElementById('bike-watts').value) || 0,
-            durationMinutes: parseInt(document.getElementById('bike-duration').value) || 0,
-            distanceKm: parseFloat(document.getElementById('bike-distance').value) || 0,
-            elevationGain: parseInt(document.getElementById('bike-elevation').value) || 0,
+            fcAvg: parseInt(document.getElementById('bike-fc')?.value) || 0,
+            wattsAvg: parseInt(document.getElementById('bike-watts')?.value) || 0,
+            durationMinutes: parseInt(document.getElementById('bike-duration')?.value) || 0,
+            distanceKm: parseFloat(document.getElementById('bike-distance')?.value) || 0,
+            elevationGain: parseInt(document.getElementById('bike-elevation')?.value) || 0,
           };
+          if (hasExtraVelo) data.extraActivities = ['velo'];
         }
 
         try {
@@ -98,6 +143,37 @@ export async function render(container, resetDate = true) {
   } catch (err) {
     container.innerHTML = `<div class="empty-state"><p>Erreur</p><p style="font-size:12px">${err.message}</p></div>`;
   }
+}
+
+function buildSaveData(schedule, exercises, weekNum, phase, existing) {
+  const data = {
+    week: weekNum,
+    phase,
+    dayType: schedule.type,
+    muscleGroup: schedule.label,
+    extraActivities: existing?.extraActivities || [],
+  };
+
+  if (schedule.type === 'muscu') {
+    data.exercises = exercises.map((ex, i) => ({
+      id: ex.id,
+      name: ex.name,
+      sets: ex.sets,
+      reps: ex.reps,
+      done: document.getElementById(`ex-done-${i}`)?.checked || false,
+      note: document.getElementById(`ex-note-${i}`)?.value || '',
+    }));
+  } else if (schedule.type === 'velo') {
+    data.bikeData = {
+      fcAvg: parseInt(document.getElementById('bike-fc')?.value) || 0,
+      wattsAvg: parseInt(document.getElementById('bike-watts')?.value) || 0,
+      durationMinutes: parseInt(document.getElementById('bike-duration')?.value) || 0,
+      distanceKm: parseFloat(document.getElementById('bike-distance')?.value) || 0,
+      elevationGain: parseInt(document.getElementById('bike-elevation')?.value) || 0,
+    };
+  }
+
+  return data;
 }
 
 function renderMuscu(exercises, existing) {
