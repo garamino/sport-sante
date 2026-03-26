@@ -1,4 +1,4 @@
-const CACHE_NAME = 'sport-sante-v4';
+const CACHE_NAME = 'sport-sante-v5';
 const ASSETS = [
   './',
   './index.html',
@@ -41,29 +41,18 @@ self.addEventListener('activate', (event) => {
   self.clients.claim();
 });
 
-// Fetch: cache-first for app shell, network-first for Firebase
+// Fetch: network-first for everything (offline fallback to cache)
 self.addEventListener('fetch', (event) => {
-  const url = new URL(event.request.url);
-
-  // Network-first for Firebase/external APIs
-  if (url.hostname.includes('googleapis.com') ||
-      url.hostname.includes('gstatic.com') ||
-      url.hostname.includes('firebaseapp.com') ||
-      url.hostname.includes('cdn.jsdelivr.net')) {
-    event.respondWith(
-      fetch(event.request)
-        .then(response => {
+  event.respondWith(
+    fetch(event.request)
+      .then(response => {
+        // Cache successful responses for offline use
+        if (response.ok) {
           const clone = response.clone();
           caches.open(CACHE_NAME).then(cache => cache.put(event.request, clone));
-          return response;
-        })
-        .catch(() => caches.match(event.request))
-    );
-    return;
-  }
-
-  // Cache-first for app shell
-  event.respondWith(
-    caches.match(event.request).then(cached => cached || fetch(event.request))
+        }
+        return response;
+      })
+      .catch(() => caches.match(event.request))
   );
 });
