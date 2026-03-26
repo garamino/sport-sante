@@ -289,7 +289,7 @@ function renderPerformanceChart(container, bikeData, colors) {
     return;
   }
 
-  const defaultFCmax = 190;
+  const defaultFCmax = parseInt(localStorage.getItem('fcmax')) || 190;
 
   container.innerHTML = `
     <div id="perf-metrics" class="perf-metrics"></div>
@@ -471,6 +471,7 @@ function renderPerformanceChart(container, bikeData, colors) {
   slider.addEventListener('input', () => {
     const fcMax = parseInt(slider.value);
     fcmaxLabel.textContent = fcMax;
+    localStorage.setItem('fcmax', fcMax);
 
     indices = calcIndices(fcMax);
     trend = linearRegression(indices);
