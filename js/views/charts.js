@@ -182,9 +182,9 @@ async function renderChart(type) {
       // Sub-tabs for Intensité / Performance
       area.innerHTML = `
         <div class="chart-subtabs">
-          <button class="chart-subtab active" data-sub="intensite">Intensité</button>
+          <button class="chart-subtab active" data-sub="efficacite">Efficacité</button>
+          <button class="chart-subtab" data-sub="intensite">Intensité</button>
           <button class="chart-subtab" data-sub="performance">Performance</button>
-          <button class="chart-subtab" data-sub="efficacite">Efficacité</button>
         </div>
         <div id="bike-chart-area"></div>
       `;
@@ -198,7 +198,7 @@ async function renderChart(type) {
         });
       });
 
-      renderBikeSubChart('intensite', bikeData, chartColors, baseOptions);
+      renderBikeSubChart('efficacite', bikeData, chartColors, baseOptions);
     }
   } catch (e) {
     console.error('Chart error:', e);
@@ -323,50 +323,40 @@ function renderPerformanceChart(container, bikeData, colors) {
   // Filter sessions with all required data
   const validData = bikeData.filter(w => {
     const b = w.bikeData;
-    return b.fcAvg && b.durationMinutes && b.distanceKm && b.durationMinutes > 0;
+    return b.fcAvg && b.distanceKm && b.wattsAvg && b.fcAvg > 0;
   });
 
   if (validData.length === 0) {
     container.innerHTML = `
       <div class="empty-state">
         <p>Données insuffisantes</p>
-        <p style="font-size:13px;color:var(--text-secondary)">Il faut au minimum FC, durée et distance pour calculer l'indice.</p>
+        <p style="font-size:13px;color:var(--text-secondary)">Il faut au minimum Watts, FC et distance pour calculer l'indice.</p>
       </div>
     `;
     return;
   }
-
-  const defaultFCmax = parseInt(localStorage.getItem('fcmax')) || 190;
 
   container.innerHTML = `
     <div id="perf-metrics" class="perf-metrics"></div>
     <div class="chart-container">
       <canvas id="perf-chart"></canvas>
     </div>
-    <div class="perf-slider-container">
-      <label class="perf-slider-label">
-        FC max : <span id="fcmax-value">${defaultFCmax}</span> bpm
-      </label>
-      <input type="range" id="fcmax-slider" class="quality-slider" min="170" max="210" value="${defaultFCmax}" step="1">
-    </div>
     <div class="formula-box">
       <span class="formula-label">Formule</span>
-      <code>indice = (distance + D÷100) ÷ (durée_h × FC÷FC<sub>max</sub>)</code>
+      <code>indice = Watts<sub>moy</sub> × (distance + D<sup>+</sup>÷40) ÷ FC<sub>moy</sub></code>
     </div>
   `;
 
   const canvas = document.getElementById('perf-chart');
-  const slider = document.getElementById('fcmax-slider');
-  const fcmaxLabel = document.getElementById('fcmax-value');
 
-  function calcIndices(fcMax) {
+  function calcIndices() {
     return validData.map(w => {
       const b = w.bikeData;
       const dist = parseFloat(b.distanceKm) || 0;
       const dplus = parseFloat(b.elevationGain) || 0;
-      const dureeH = (parseFloat(b.durationMinutes) || 1) / 60;
+      const watts = parseFloat(b.wattsAvg) || 1;
       const fc = parseFloat(b.fcAvg) || 1;
-      return (dist + dplus / 100) / (dureeH * (fc / fcMax));
+      return watts * (dist + dplus / 40) / fc;
     });
   }
 
@@ -411,7 +401,7 @@ function renderPerformanceChart(container, bikeData, colors) {
   });
 
   const fcValues = validData.map(w => parseFloat(w.bikeData.fcAvg));
-  let indices = calcIndices(defaultFCmax);
+  let indices = calcIndices();
   let trend = linearRegression(indices);
 
   updateMetrics(indices, fcValues);
@@ -516,21 +506,6 @@ function renderPerformanceChart(container, bikeData, colors) {
     },
   });
 
-  // Slider interaction
-  slider.addEventListener('input', () => {
-    const fcMax = parseInt(slider.value);
-    fcmaxLabel.textContent = fcMax;
-    localStorage.setItem('fcmax', fcMax);
-
-    indices = calcIndices(fcMax);
-    trend = linearRegression(indices);
-
-    perfChartInstance.data.datasets[0].data = indices;
-    perfChartInstance.data.datasets[1].data = trend;
-    perfChartInstance.update();
-
-    updateMetrics(indices, fcValues);
-  });
 }
 
 function renderEfficaciteChart(container, bikeData, colors, baseOptions) {
