@@ -343,7 +343,8 @@ function renderPerformanceChart(container, bikeData, colors) {
     </div>
     <div class="formula-box">
       <span class="formula-label">Formule</span>
-      <code>indice = Watts<sub>moy</sub> × (distance + D<sup>+</sup>÷40) ÷ FC<sub>moy</sub></code>
+      <code>indice = (W<sub>moy</sub> × (dist + D<sup>+</sup>÷40) ÷ FC<sub>moy</sub>) × cadence<sub>f</sub></code>
+      <span class="formula-detail">cadence<sub>f</sub> = max(0.7, 1 − 0.015 × |RPM − 85|)</span>
     </div>
   `;
 
@@ -356,7 +357,9 @@ function renderPerformanceChart(container, bikeData, colors) {
       const dplus = parseFloat(b.elevationGain) || 0;
       const watts = parseFloat(b.wattsAvg) || 1;
       const fc = parseFloat(b.fcAvg) || 1;
-      return watts * (dist + dplus / 40) / fc;
+      const rpm = parseFloat(b.rpm) || 85; // défaut 85 = neutre si pas de donnée
+      const cadenceFactor = Math.max(0.7, 1 - 0.015 * Math.abs(rpm - 85));
+      return (watts * (dist + dplus / 40) / fc) * cadenceFactor;
     });
   }
 
