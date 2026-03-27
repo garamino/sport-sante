@@ -23,7 +23,7 @@ jobs:
       - uses: actions/checkout@v4
       - name: Stamp version and commit
         run: |
-          TODAY="$(date -u +%Y.%m.%d)"
+          TODAY="$(TZ=Europe/Paris date +%Y.%m.%d)"
           # Read current version to extract counter
           CURRENT=$(grep -oP "APP_VERSION = '\K[^']+" js/version.js || echo "")
           CURRENT_DATE=$(echo "$CURRENT" | grep -oP '^\d{4}\.\d{2}\.\d{2}' || echo "")
