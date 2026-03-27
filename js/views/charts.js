@@ -480,6 +480,7 @@ function renderPerformanceChart(container, bikeData, colors) {
               if (b.wattsAvg) lines.push(`Watts moy: ${b.wattsAvg} W`);
               if (b.durationMinutes) lines.push(`Durée: ${b.durationMinutes} min`);
               if (b.elevationGain) lines.push(`D+: ${b.elevationGain} m`);
+              if (b.rpm) lines.push(`Cadence: ${b.rpm} rpm`);
               return lines;
             },
           },

@@ -156,6 +156,7 @@ export async function render(container, resetDate = true) {
             durationMinutes: parseInt(document.getElementById('bike-duration')?.value) || 0,
             distanceKm: parseFloat(document.getElementById('bike-distance')?.value) || 0,
             elevationGain: parseInt(document.getElementById('bike-elevation')?.value) || 0,
+            rpm: parseInt(document.getElementById('bike-rpm')?.value) || 0,
           };
           if (hasExtraVelo) data.extraActivities = ['velo'];
         }
@@ -200,6 +201,7 @@ function buildSaveData(schedule, exercises, weekNum, phase, existing) {
       durationMinutes: parseInt(document.getElementById('bike-duration')?.value) || 0,
       distanceKm: parseFloat(document.getElementById('bike-distance')?.value) || 0,
       elevationGain: parseInt(document.getElementById('bike-elevation')?.value) || 0,
+      rpm: parseInt(document.getElementById('bike-rpm')?.value) || 0,
     };
   }
 
@@ -272,7 +274,10 @@ function renderVelo(existing) {
           <label>D+ (m)</label>
           <input type="number" id="bike-elevation" placeholder="250" value="${bike.elevationGain || ''}">
         </div>
-        <div class="form-group"></div>
+        <div class="form-group">
+          <label>Cadence (rpm)</label>
+          <input type="number" id="bike-rpm" placeholder="80" value="${bike.rpm || ''}">
+        </div>
       </div>
     </div>
   `;
