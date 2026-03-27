@@ -1,6 +1,7 @@
 import { today, getDayOfWeek, getWeekNumber, getPhase, formatDateFR, addDays, showToast } from '../utils.js';
 import { getUserProfile, getWorkout, saveWorkout } from '../db.js';
 import { getExercisesForDay, getDaySchedule } from '../program-data.js';
+import { EXERCISE_GUIDE, openExerciseGuide } from '../exercise-guide.js';
 
 let currentDate = null;
 
@@ -139,6 +140,14 @@ export async function render(container, resetDate = true) {
       });
     }
 
+    // Exercise guide buttons
+    container.querySelectorAll('.exercise-guide-btn').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        openExerciseGuide(btn.dataset.exerciseId);
+      });
+    });
+
     // Save
     const saveBtn = document.getElementById('save-workout');
     if (saveBtn) {
@@ -223,7 +232,14 @@ function renderMuscu(exercises, existing, doneExercises, todoExercises) {
         <div class="exercise-header">
           <input type="checkbox" class="exercise-checkbox" id="ex-done-${i}" ${done ? 'checked' : ''}>
           <div class="exercise-info">
-            <div class="exercise-name">${ex.name}</div>
+            <div class="exercise-name">
+              ${ex.name}
+              ${EXERCISE_GUIDE[ex.id] ? `<button class="exercise-guide-btn" data-exercise-id="${ex.id}" title="Comment faire cet exercice">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                  <circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/>
+                </svg>
+              </button>` : ''}
+            </div>
             <div class="exercise-details">${ex.notes}</div>
             <div class="exercise-meta">
               <span class="exercise-tag">${ex.sets} × ${ex.reps}</span>
