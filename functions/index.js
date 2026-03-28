@@ -127,7 +127,7 @@ function buildUserMessage(trigger, date, data) {
 }
 
 exports.getCoachAdvice = onCall(
-  { maxInstances: 3, timeoutSeconds: 30, region: "europe-west1" },
+  { maxInstances: 3, timeoutSeconds: 30, region: "europe-west1", invoker: "public" },
   async (request) => {
     // 1. Auth check
     if (!request.auth) {

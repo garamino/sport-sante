@@ -64,8 +64,13 @@ export function showCoachAdvice(trigger, date) {
         overlay.remove();
       }
     } catch (err) {
-      console.warn('Coach advice error:', err.message);
-      overlay.remove();
+      console.warn('Coach advice error:', err.message, err);
+      const messageEl = overlay.querySelector('.coach-message');
+      if (messageEl) {
+        messageEl.innerHTML = `<p class="coach-text" style="color:var(--danger)">Erreur : ${err.message || 'Impossible de contacter le coach.'}</p>`;
+      } else {
+        overlay.remove();
+      }
     }
   })();
 }
