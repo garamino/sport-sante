@@ -1,4 +1,4 @@
-const CACHE_NAME = 'sport-sante-v6';
+const CACHE_NAME = 'sport-sante-v7';
 const ASSETS = [
   './',
   './index.html',
@@ -8,6 +8,7 @@ const ASSETS = [
   './js/auth.js',
   './js/config.js',
   './js/db.js',
+  './js/coach.js',
   './js/router.js',
   './js/utils.js',
   './js/version.js',

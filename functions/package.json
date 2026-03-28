@@ -1,0 +1,13 @@
+{
+  "name": "sport-sante-functions",
+  "description": "Cloud Functions for Sport & Santé AI Coach",
+  "engines": {
+    "node": "20"
+  },
+  "main": "index.js",
+  "dependencies": {
+    "firebase-admin": "^13.0.0",
+    "firebase-functions": "^6.3.0",
+    "@anthropic-ai/sdk": "^0.39.0"
+  }
+}

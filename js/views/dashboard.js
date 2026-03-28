@@ -1,5 +1,5 @@
-import { today, formatDateFR, getDayOfWeek, getWeekNumber, getPhase } from '../utils.js';
-import { getUserProfile, getWorkout, getSleep, getWeekly } from '../db.js';
+import { today, formatDateFR, getDayOfWeek, getWeekNumber, getPhase, showToast } from '../utils.js';
+import { getUserProfile, getWorkout, getSleep, getWeekly, getCoachNotes, saveCoachNotes, saveApiKey } from '../db.js';
 import { getDaySchedule, getExercisesForDay } from '../program-data.js';
 
 export async function render(container) {
@@ -14,10 +14,11 @@ export async function render(container) {
     const phase = getPhase(weekNum);
 
     // Load today's data
-    const [workout, sleep, weekly] = await Promise.all([
+    const [workout, sleep, weekly, coachNotes] = await Promise.all([
       getWorkout(todayStr).catch(() => null),
       getSleep(todayStr).catch(() => null),
       weekNum > 0 ? getWeekly(`W${String(weekNum).padStart(2, '0')}`).catch(() => null) : null,
+      getCoachNotes().catch(() => null),
     ]);
 
     // Count exercises done today
@@ -94,6 +95,25 @@ export async function render(container) {
           <span>Pesée & résumé hebdo</span>
         </a>
       </div>
+
+      <div class="section-title" style="margin-top:24px">Coach IA</div>
+      <div class="card">
+        <div class="card-title">Notes pour le coach</div>
+        <p style="font-size:12px;color:var(--text-secondary);margin-bottom:8px">
+          Informe le coach de tes blessures, douleurs, objectifs ou contraintes. Il en tiendra compte à chaque conseil.
+        </p>
+        <textarea id="coach-notes" placeholder="Ex: Douleur poignet droit, tendinite en récupération, objectif 65kg..." rows="3">${coachNotes?.persistentNotes || ''}</textarea>
+        <button class="btn btn-primary btn-small" id="save-coach-notes" style="margin-top:8px;width:100%">Sauvegarder les notes</button>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Clé API Claude</div>
+        <p style="font-size:12px;color:var(--text-secondary);margin-bottom:8px">
+          Entre ta clé API depuis <a href="https://console.anthropic.com/" target="_blank" rel="noopener" style="color:var(--accent)">console.anthropic.com</a>. Elle est stockée de manière sécurisée et jamais relue.
+        </p>
+        <input type="password" id="api-key-input" placeholder="sk-ant-api03-...">
+        <button class="btn btn-primary btn-small" id="save-api-key" style="margin-top:8px;width:100%">Enregistrer la clé</button>
+      </div>
     `;
 
     // Setup start date button
@@ -110,6 +130,39 @@ export async function render(container) {
         }
       });
     }
+
+    // Save coach notes
+    document.getElementById('save-coach-notes')?.addEventListener('click', async (e) => {
+      const btn = e.target;
+      const text = document.getElementById('coach-notes').value.trim();
+      btn.disabled = true;
+      try {
+        await saveCoachNotes(text);
+        showToast('Notes coach sauvegardées ✓');
+      } catch {
+        showToast('Erreur — réessaie');
+      }
+      btn.disabled = false;
+    });
+
+    // Save API key
+    document.getElementById('save-api-key')?.addEventListener('click', async (e) => {
+      const btn = e.target;
+      const key = document.getElementById('api-key-input').value.trim();
+      if (!key) {
+        showToast('Entre une clé API');
+        return;
+      }
+      btn.disabled = true;
+      try {
+        await saveApiKey(key);
+        document.getElementById('api-key-input').value = '';
+        showToast('Clé API enregistrée ✓');
+      } catch {
+        showToast('Erreur — réessaie');
+      }
+      btn.disabled = false;
+    });
   } catch (err) {
     container.innerHTML = `<div class="empty-state"><p>Erreur de chargement</p><p style="font-size:12px;color:var(--text-secondary)">${err.message}</p></div>`;
   }

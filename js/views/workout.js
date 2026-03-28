@@ -1,7 +1,8 @@
 import { today, getDayOfWeek, getWeekNumber, getPhase, formatDateFR, addDays, showToast } from '../utils.js';
-import { getUserProfile, getWorkout, saveWorkout } from '../db.js';
+import { getUserProfile, getWorkout, saveWorkout, getExerciseHistory } from '../db.js';
 import { getExercisesForDay, getDaySchedule } from '../program-data.js';
 import { EXERCISE_GUIDE, openExerciseGuide } from '../exercise-guide.js';
+import { showCoachAdvice } from '../coach.js';
 
 let currentDate = null;
 
@@ -148,6 +149,16 @@ export async function render(container, resetDate = true) {
       });
     });
 
+    // Exercise history buttons
+    container.querySelectorAll('.exercise-history-btn').forEach(btn => {
+      btn.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        const exId = btn.dataset.exerciseId;
+        const exName = btn.dataset.exerciseName;
+        openExerciseHistory(exId, exName, currentDate);
+      });
+    });
+
     // Save
     const saveBtn = document.getElementById('save-workout');
     if (saveBtn) {
@@ -173,6 +184,7 @@ export async function render(container, resetDate = true) {
         try {
           await saveWorkout(currentDate, data);
           showToast('Séance enregistrée ✓');
+          showCoachAdvice('workout', currentDate);
         } catch (err) {
           showToast('Erreur — réessaie');
         }
@@ -239,6 +251,10 @@ function renderMuscu(exercises, existing, doneExercises, todoExercises) {
                   <circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/>
                 </svg>
               </button>` : ''}
+              <button class="exercise-history-btn" data-exercise-id="${ex.id}" data-exercise-name="${ex.name}" title="Historique">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                  <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+              </button>
             </div>
             <div class="exercise-details">${ex.notes}</div>
             <div class="exercise-meta">
@@ -309,4 +325,55 @@ function renderRest() {
       </p>
     </div>
   `;
+}
+
+async function openExerciseHistory(exerciseId, exerciseName, date) {
+  // Show modal with spinner immediately
+  const overlay = document.createElement('div');
+  overlay.className = 'guide-modal-overlay';
+  overlay.innerHTML = `
+    <div class="guide-modal">
+      <button class="guide-modal-close">&times;</button>
+      <h3 style="font-size:16px;margin-bottom:14px">${exerciseName}</h3>
+      <div class="spinner"></div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+
+  const close = () => overlay.remove();
+  overlay.querySelector('.guide-modal-close').addEventListener('click', close);
+  overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
+
+  try {
+    const history = await getExerciseHistory(exerciseId, date, 5);
+    const content = overlay.querySelector('.guide-modal');
+
+    if (history.length === 0) {
+      content.innerHTML = `
+        <button class="guide-modal-close">&times;</button>
+        <h3 style="font-size:16px;margin-bottom:14px">${exerciseName}</h3>
+        <p style="color:var(--text-secondary);font-size:13px;text-align:center;padding:20px 0">
+          Aucun historique trouvé
+        </p>
+      `;
+    } else {
+      content.innerHTML = `
+        <button class="guide-modal-close">&times;</button>
+        <h3 style="font-size:16px;margin-bottom:4px">${exerciseName}</h3>
+        <p style="font-size:11px;color:var(--text-secondary);margin-bottom:14px;text-transform:uppercase;letter-spacing:0.5px">5 dernières séances</p>
+        <div class="history-list">
+          ${history.map(h => `
+            <div class="history-item">
+              <span class="history-date">${formatDateFR(h.date)}</span>
+              <span class="history-note">${h.note || '—'}</span>
+            </div>
+          `).join('')}
+        </div>
+      `;
+    }
+
+    content.querySelector('.guide-modal-close').addEventListener('click', close);
+  } catch (err) {
+    overlay.remove();
+  }
 }

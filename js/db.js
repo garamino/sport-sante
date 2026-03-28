@@ -49,6 +49,22 @@ export async function getAllWorkouts() {
   return snap.docs.map(d => d.data());
 }
 
+export async function getExerciseHistory(exerciseId, beforeDate, count = 5) {
+  const q = query(userCollection('workouts'), orderBy('date', 'desc'));
+  const snap = await getDocs(q);
+  const results = [];
+  for (const d of snap.docs) {
+    const data = d.data();
+    if (data.date >= beforeDate) continue;
+    const ex = data.exercises?.find(e => e.id === exerciseId);
+    if (ex) {
+      results.push({ date: data.date, note: ex.note || '', done: ex.done });
+    }
+    if (results.length >= count) break;
+  }
+  return results;
+}
+
 // === Sleep ===
 export async function getSleep(date) {
   const snap = await getDoc(userDoc(`sleep/${date}`));
@@ -85,4 +101,18 @@ export async function getAllWeeklies() {
   const q = query(userCollection('weeklies'), orderBy('week', 'asc'));
   const snap = await getDocs(q);
   return snap.docs.map(d => d.data());
+}
+
+// === Coach IA ===
+export async function saveApiKey(key) {
+  await setDoc(userDoc('settings/apiKey'), { key, savedAt: Timestamp.now() });
+}
+
+export async function getCoachNotes() {
+  const snap = await getDoc(userDoc('coachContext/notes'));
+  return snap.exists() ? snap.data() : null;
+}
+
+export async function saveCoachNotes(text) {
+  await setDoc(userDoc('coachContext/notes'), { persistentNotes: text, updatedAt: Timestamp.now() });
 }

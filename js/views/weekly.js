@@ -1,5 +1,6 @@
 import { today, formatDateFR, addDays, getWeekNumber, getPhase, showToast } from '../utils.js';
 import { getUserProfile, saveUserProfile, getWeekly, saveWeekly, getAllWorkouts, getWorkout, saveWorkout } from '../db.js';
+import { showCoachAdvice } from '../coach.js';
 
 let currentDate = null;
 
@@ -116,6 +117,7 @@ export async function render(container, resetDate = true) {
         await saveUserProfile({ currentWeight: weight });
 
         showToast('Pesée enregistrée ✓');
+        showCoachAdvice('weight', currentDate);
         render(container, false);
       } catch {
         showToast('Erreur — réessaie');
