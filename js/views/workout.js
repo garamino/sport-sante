@@ -53,6 +53,13 @@ export async function render(container, resetDate = true) {
         <span style="font-size:12px;color:var(--text-secondary);margin-left:8px">${phase} · S${weekNum}</span>
       </div>
 
+      ${existing?.skipped ? `
+        <div class="skipped-banner">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
+          Séance non faite
+        </div>
+      ` : ''}
+
       ${schedule.type === 'muscu' ? renderMuscu(exercises, existing, doneExercises, todoExercises) : ''}
       ${schedule.type === 'velo' ? renderVelo(existing) : ''}
       ${schedule.type === 'rest' ? renderRest() : ''}
@@ -282,19 +289,22 @@ function renderMuscu(exercises, existing, doneExercises, todoExercises) {
   // Render done exercises first, then todo
   const orderedIndices = [...doneExercises, ...todoExercises];
 
+  const isSkipped = existing?.skipped;
+
   return orderedIndices.map(i => {
     const ex = exercises[i];
     const saved = existing?.exercises?.find(e => e.id === ex.id);
     const done = saved?.done || false;
     const note = saved?.note || '';
+    const cardClass = isSkipped ? 'skipped' : (done ? 'done' : '');
 
     return `
-      <div class="exercise-card ${done ? 'done' : ''}" id="card-${i}">
+      <div class="exercise-card ${cardClass}" id="card-${i}">
         <div class="exercise-header">
           <input type="checkbox" class="exercise-checkbox" id="ex-done-${i}" ${done ? 'checked' : ''}>
           <div class="exercise-info">
             <div class="exercise-name">
-              ${ex.name}
+              ${ex.name}${isSkipped ? '<span class="skipped-badge">Pas fait</span>' : ''}
               ${EXERCISE_GUIDE[ex.id] ? `<button class="exercise-guide-btn" data-exercise-id="${ex.id}" title="Comment faire cet exercice">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
                   <circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/>
@@ -324,9 +334,10 @@ function renderMuscu(exercises, existing, doneExercises, todoExercises) {
 
 function renderVelo(existing) {
   const bike = existing?.bikeData || {};
+  const isSkipped = existing?.skipped;
   return `
-    <div class="card bike-form">
-      <div class="card-title">Session vélo</div>
+    <div class="card bike-form ${isSkipped ? 'skipped' : ''}">
+      <div class="card-title">Session vélo${isSkipped ? '<span class="skipped-badge" style="margin-left:8px">Pas fait</span>' : ''}</div>
       <p style="font-size:13px;color:var(--text-secondary);margin-bottom:14px">
         Intensité modérée · 110-128 bpm · tu dois pouvoir parler
       </p>

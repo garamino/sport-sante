@@ -295,6 +295,47 @@ textarea {
   opacity: 0.85;
 }
 
+.exercise-card.skipped {
+  border-color: var(--danger);
+  opacity: 0.75;
+}
+
+.bike-form.skipped {
+  border-color: var(--danger);
+  opacity: 0.75;
+}
+
+/* ===== Skipped Banner ===== */
+.skipped-banner {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 10px 16px;
+  margin-bottom: 12px;
+  background: rgba(239, 83, 80, 0.12);
+  border: 1px solid var(--danger);
+  border-radius: var(--radius-sm);
+  color: var(--danger);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+/* ===== Skipped Badge ===== */
+.skipped-badge {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  color: var(--danger);
+  background: rgba(239, 83, 80, 0.15);
+  padding: 2px 7px;
+  border-radius: 8px;
+  margin-left: 6px;
+  vertical-align: middle;
+}
+
 .exercise-header {
   display: flex;
   align-items: center;
