@@ -1,7 +1,7 @@
 import { today, formatDateFR, getDayOfWeek, getWeekNumber, getPhase, showToast } from '../utils.js';
 import { getUserProfile, getWorkout, getSleep, getWeekly, getCoachNotes, saveCoachNotes } from '../db.js';
 import { getDaySchedule, getExercisesForDay } from '../program-data.js';
-import { showCoachAdvice } from '../coach.js';
+import { showCoachAdvice, openCoachHistory } from '../coach.js';
 
 export async function render(container) {
   container.innerHTML = '<div class="spinner"></div>';
@@ -99,12 +99,18 @@ export async function render(container) {
 
       <div style="display:flex;align-items:center;justify-content:space-between;margin-top:24px">
         <div class="section-title" style="margin:0">Coach IA</div>
-        <button class="btn btn-primary btn-small" id="ask-coach-btn" style="width:auto;padding:6px 14px;font-size:12px;gap:6px">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
-          Consulter
-        </button>
+        <div style="display:flex;gap:6px">
+          <button class="btn btn-small" id="coach-history-btn" style="width:auto;padding:6px 14px;font-size:12px;gap:6px;background:var(--bg-card);border:1px solid var(--border);color:var(--text-secondary)">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+            Historique
+          </button>
+          <button class="btn btn-primary btn-small" id="ask-coach-btn" style="width:auto;padding:6px 14px;font-size:12px;gap:6px">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
+            Consulter
+          </button>
+        </div>
       </div>
-      <div class="card">
+      <div class="card" style="margin-top:12px">
         <div class="card-title">Notes pour le coach</div>
         <p style="font-size:12px;color:var(--text-secondary);margin-bottom:8px">
           Informe le coach de tes blessures, douleurs, objectifs ou contraintes. Il en tiendra compte à chaque conseil.
@@ -133,6 +139,11 @@ export async function render(container) {
     // Ask coach
     document.getElementById('ask-coach-btn')?.addEventListener('click', () => {
       showCoachAdvice('workout', todayStr);
+    });
+
+    // Coach history
+    document.getElementById('coach-history-btn')?.addEventListener('click', () => {
+      openCoachHistory();
     });
 
     // Save coach notes

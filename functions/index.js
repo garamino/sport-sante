@@ -121,6 +121,15 @@ function buildUserMessage(trigger, date, data) {
     });
   }
 
+  // Previous coach advice (for continuity)
+  if (data.coachHistory && data.coachHistory.length > 0) {
+    parts.push(`\n=== TES DERNIERS CONSEILS ===`);
+    data.coachHistory.forEach((h) => {
+      parts.push(`[${h.date}] (${h.trigger}) : ${h.advice}`);
+    });
+    parts.push(`\nTiens compte de tes conseils précédents pour assurer la continuité. Ne te répète pas.`);
+  }
+
   parts.push(`\nDonne un conseil personnalisé basé sur ces données. Sois concis (2-4 phrases).`);
 
   return parts.join("\n");
@@ -207,6 +216,12 @@ exports.getCoachAdvice = onCall(
       .get();
     data.recentWeeklies = weekliesSnap.docs.map((d) => d.data());
 
+    // Coach history (last 5 interactions for continuity)
+    const historyRef = db.doc(`users/${uid}/coachContext/history`);
+    const historyDoc = await historyRef.get();
+    const history = historyDoc.exists ? historyDoc.data().entries || [] : [];
+    data.coachHistory = history;
+
     // 6. Build prompt and call Claude
     const userMessage = buildUserMessage(trigger, date, data);
 
@@ -226,6 +241,12 @@ exports.getCoachAdvice = onCall(
         date: today,
         count: usage.date === today ? (usage.count || 0) + 1 : 1,
       });
+
+      // 8. Save to coach history (keep last 5)
+      const now = new Date().toISOString();
+      const newEntry = { date: now, trigger, advice };
+      const updatedHistory = [newEntry, ...history].slice(0, 5);
+      await historyRef.set({ entries: updatedHistory });
 
       return { advice };
     } catch (err) {

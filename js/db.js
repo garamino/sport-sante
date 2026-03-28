@@ -118,3 +118,8 @@ export async function getCoachNotes() {
 export async function saveCoachNotes(text) {
   await setDoc(userDoc('coachContext/notes'), { persistentNotes: text, updatedAt: Timestamp.now() });
 }
+
+export async function getCoachHistory() {
+  const snap = await getDoc(userDoc('coachContext/history'));
+  return snap.exists() ? snap.data().entries || [] : [];
+}

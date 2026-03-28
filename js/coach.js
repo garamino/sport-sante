@@ -1,5 +1,6 @@
 import { getFunctions, httpsCallable } from 'https://www.gstatic.com/firebasejs/11.6.0/firebase-functions.js';
 import { app } from './auth.js';
+import { getCoachHistory } from './db.js';
 
 const functions = getFunctions(app, 'europe-west1');
 const getCoachAdviceFn = httpsCallable(functions, 'getCoachAdvice');
@@ -59,7 +60,7 @@ export function showCoachAdvice(trigger, date) {
       }
 
       if (data.advice) {
-        messageEl.innerHTML = `<p class="coach-text">${data.advice}</p>`;
+        messageEl.innerHTML = `<p class="coach-text">${formatAdvice(data.advice)}</p>`;
       } else {
         overlay.remove();
       }
@@ -73,4 +74,73 @@ export function showCoachAdvice(trigger, date) {
       }
     }
   })();
+}
+
+function formatAdvice(text) {
+  return text.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>').replace(/\n/g, '<br>');
+}
+
+const TRIGGER_LABELS = {
+  workout: 'Séance',
+  sleep: 'Sommeil',
+  weight: 'Poids',
+};
+
+function formatCoachDate(isoStr) {
+  const d = new Date(isoStr);
+  return d.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+}
+
+export async function openCoachHistory() {
+  const overlay = document.createElement('div');
+  overlay.className = 'guide-modal-overlay';
+  overlay.innerHTML = `
+    <div class="guide-modal">
+      <button class="guide-modal-close">&times;</button>
+      <h3 style="font-size:16px;margin-bottom:4px">🐻 Historique Coach IA</h3>
+      <p style="font-size:11px;color:var(--text-secondary);margin-bottom:14px;text-transform:uppercase;letter-spacing:0.5px">5 dernières interactions</p>
+      <div class="spinner"></div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+
+  const close = () => overlay.remove();
+  overlay.querySelector('.guide-modal-close').addEventListener('click', close);
+  overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
+
+  try {
+    const history = await getCoachHistory();
+    const content = overlay.querySelector('.guide-modal');
+
+    if (history.length === 0) {
+      content.innerHTML = `
+        <button class="guide-modal-close">&times;</button>
+        <h3 style="font-size:16px;margin-bottom:14px">🐻 Historique Coach IA</h3>
+        <p style="color:var(--text-secondary);font-size:13px;text-align:center;padding:20px 0">
+          Aucune interaction pour le moment.<br>Clique sur "Consulter" pour démarrer.
+        </p>
+      `;
+    } else {
+      content.innerHTML = `
+        <button class="guide-modal-close">&times;</button>
+        <h3 style="font-size:16px;margin-bottom:4px">🐻 Historique Coach IA</h3>
+        <p style="font-size:11px;color:var(--text-secondary);margin-bottom:14px;text-transform:uppercase;letter-spacing:0.5px">5 dernières interactions</p>
+        <div class="coach-history-list">
+          ${history.map(h => `
+            <div class="coach-history-item">
+              <div class="coach-history-meta">
+                <span class="coach-history-date">${formatCoachDate(h.date)}</span>
+                <span class="coach-history-trigger">${TRIGGER_LABELS[h.trigger] || h.trigger}</span>
+              </div>
+              <p class="coach-history-advice">${formatAdvice(h.advice)}</p>
+            </div>
+          `).join('')}
+        </div>
+      `;
+    }
+
+    content.querySelector('.guide-modal-close').addEventListener('click', close);
+  } catch (err) {
+    overlay.remove();
+  }
 }

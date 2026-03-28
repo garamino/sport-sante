@@ -1160,6 +1160,50 @@ textarea {
   40% { opacity: 1; transform: scale(1); }
 }
 
+/* ===== Coach History ===== */
+.coach-history-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.coach-history-item {
+  padding: 12px;
+  background: var(--bg-card);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+}
+
+.coach-history-meta {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.coach-history-date {
+  font-size: 12px;
+  color: var(--text-secondary);
+  font-weight: 500;
+}
+
+.coach-history-trigger {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  color: var(--accent);
+  background: rgba(79, 195, 247, 0.12);
+  padding: 2px 8px;
+  border-radius: 8px;
+}
+
+.coach-history-advice {
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-primary);
+}
+
 /* ===== Exercise History Button ===== */
 .exercise-history-btn {
   background: none;
