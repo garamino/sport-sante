@@ -1,6 +1,7 @@
 import { today, formatDateFR, getDayOfWeek, getWeekNumber, getPhase, showToast } from '../utils.js';
 import { getUserProfile, getWorkout, getSleep, getWeekly, getCoachNotes, saveCoachNotes } from '../db.js';
 import { getDaySchedule, getExercisesForDay } from '../program-data.js';
+import { showCoachAdvice } from '../coach.js';
 
 export async function render(container) {
   container.innerHTML = '<div class="spinner"></div>';
@@ -96,7 +97,13 @@ export async function render(container) {
         </a>
       </div>
 
-      <div class="section-title" style="margin-top:24px">Coach IA</div>
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-top:24px">
+        <div class="section-title" style="margin:0">Coach IA</div>
+        <button class="btn btn-primary btn-small" id="ask-coach-btn" style="width:auto;padding:6px 14px;font-size:12px;gap:6px">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
+          Consulter
+        </button>
+      </div>
       <div class="card">
         <div class="card-title">Notes pour le coach</div>
         <p style="font-size:12px;color:var(--text-secondary);margin-bottom:8px">
@@ -122,6 +129,11 @@ export async function render(container) {
         }
       });
     }
+
+    // Ask coach
+    document.getElementById('ask-coach-btn')?.addEventListener('click', () => {
+      showCoachAdvice('workout', todayStr);
+    });
 
     // Save coach notes
     document.getElementById('save-coach-notes')?.addEventListener('click', async (e) => {

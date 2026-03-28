@@ -79,9 +79,16 @@ export async function render(container, resetDate = true) {
         </div>
       ` : ''}
 
-      <button class="btn btn-success" id="save-workout" style="margin-top:12px">
-        Enregistrer
-      </button>
+      <div style="display:flex;gap:8px;margin-top:12px">
+        ${schedule.type !== 'rest' ? `
+          <button class="btn btn-small" id="skip-workout" style="background:none;border:1px solid var(--danger);color:var(--danger);flex-shrink:0">
+            Séance non faite
+          </button>
+        ` : ''}
+        <button class="btn btn-success" id="save-workout" style="flex:1">
+          Enregistrer
+        </button>
+      </div>
     `;
 
     // Date navigation
@@ -158,6 +165,48 @@ export async function render(container, resetDate = true) {
         openExerciseHistory(exId, exName, currentDate);
       });
     });
+
+    // Skip workout
+    const skipBtn = document.getElementById('skip-workout');
+    if (skipBtn) {
+      skipBtn.addEventListener('click', async () => {
+        skipBtn.disabled = true;
+        skipBtn.textContent = 'Enregistrement...';
+
+        const data = {
+          week: weekNum,
+          phase,
+          dayType: schedule.type,
+          muscleGroup: schedule.label,
+          skipped: true,
+          extraActivities: existing?.extraActivities || [],
+        };
+
+        if (schedule.type === 'muscu') {
+          data.exercises = exercises.map(ex => ({
+            id: ex.id,
+            name: ex.name,
+            sets: ex.sets,
+            reps: ex.reps,
+            done: false,
+            note: '',
+          }));
+        } else if (schedule.type === 'velo') {
+          data.bikeData = null;
+        }
+
+        try {
+          await saveWorkout(currentDate, data);
+          showToast('Séance marquée non faite');
+          showCoachAdvice('workout', currentDate);
+          render(container, false);
+        } catch {
+          showToast('Erreur — réessaie');
+          skipBtn.disabled = false;
+          skipBtn.textContent = 'Séance non faite';
+        }
+      });
+    }
 
     // Save
     const saveBtn = document.getElementById('save-workout');
