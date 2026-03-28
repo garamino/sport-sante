@@ -106,6 +106,8 @@ export async function getAllWeeklies() {
 // === Coach IA ===
 export async function saveApiKey(key) {
   await setDoc(userDoc('settings/apiKey'), { key, savedAt: Timestamp.now() });
+  // Store readable flag in profile (key itself stays write-only)
+  await setDoc(doc(db, 'users', getUid()), { hasApiKey: true }, { merge: true });
 }
 
 export async function getCoachNotes() {

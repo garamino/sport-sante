@@ -1,5 +1,5 @@
 import { today, formatDateFR, getDayOfWeek, getWeekNumber, getPhase, showToast } from '../utils.js';
-import { getUserProfile, getWorkout, getSleep, getWeekly, getCoachNotes, saveCoachNotes, saveApiKey } from '../db.js';
+import { getUserProfile, getWorkout, getSleep, getWeekly, getCoachNotes, saveCoachNotes } from '../db.js';
 import { getDaySchedule, getExercisesForDay } from '../program-data.js';
 
 export async function render(container) {
@@ -106,14 +106,6 @@ export async function render(container) {
         <button class="btn btn-primary btn-small" id="save-coach-notes" style="margin-top:8px;width:100%">Sauvegarder les notes</button>
       </div>
 
-      <div class="card">
-        <div class="card-title">Clé API Claude</div>
-        <p style="font-size:12px;color:var(--text-secondary);margin-bottom:8px">
-          Entre ta clé API depuis <a href="https://console.anthropic.com/" target="_blank" rel="noopener" style="color:var(--accent)">console.anthropic.com</a>. Elle est stockée de manière sécurisée et jamais relue.
-        </p>
-        <input type="password" id="api-key-input" placeholder="sk-ant-api03-...">
-        <button class="btn btn-primary btn-small" id="save-api-key" style="margin-top:8px;width:100%">Enregistrer la clé</button>
-      </div>
     `;
 
     // Setup start date button
@@ -145,24 +137,6 @@ export async function render(container) {
       btn.disabled = false;
     });
 
-    // Save API key
-    document.getElementById('save-api-key')?.addEventListener('click', async (e) => {
-      const btn = e.target;
-      const key = document.getElementById('api-key-input').value.trim();
-      if (!key) {
-        showToast('Entre une clé API');
-        return;
-      }
-      btn.disabled = true;
-      try {
-        await saveApiKey(key);
-        document.getElementById('api-key-input').value = '';
-        showToast('Clé API enregistrée ✓');
-      } catch {
-        showToast('Erreur — réessaie');
-      }
-      btn.disabled = false;
-    });
   } catch (err) {
     container.innerHTML = `<div class="empty-state"><p>Erreur de chargement</p><p style="font-size:12px;color:var(--text-secondary)">${err.message}</p></div>`;
   }
