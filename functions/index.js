@@ -41,10 +41,12 @@ function buildUserMessage(trigger, date, data) {
   parts.push(`Type : ${trigger}`);
   parts.push(`Date : ${date}`);
 
-  // User context / persistent notes
-  if (data.coachNotes) {
-    parts.push(`\n=== NOTES PERSISTANTES (blessures, objectifs, contexte) ===`);
-    parts.push(data.coachNotes);
+  // User context / notes historisées
+  if (data.coachNotes && data.coachNotes.length > 0) {
+    parts.push(`\n=== NOTES DE L'UTILISATEUR (blessures, objectifs, contexte) ===`);
+    for (const n of data.coachNotes) {
+      parts.push(`[${n.date}] ${n.text}`);
+    }
   }
 
   // Current status
@@ -176,9 +178,18 @@ exports.getCoachAdvice = onCall(
     const profileDoc = await db.doc(`users/${uid}`).get();
     data.profile = profileDoc.exists ? profileDoc.data() : null;
 
-    // Coach notes
-    const notesDoc = await db.doc(`users/${uid}/coachContext/notes`).get();
-    data.coachNotes = notesDoc.exists ? notesDoc.data().persistentNotes : null;
+    // Coach notes (historisées par date)
+    const notesSnap = await db.collection(`users/${uid}/coachNotes`)
+      .orderBy("date", "desc").limit(10).get();
+    data.coachNotes = notesSnap.docs.map((d) => d.data());
+
+    // Fallback: legacy persistent notes
+    if (data.coachNotes.length === 0) {
+      const legacyDoc = await db.doc(`users/${uid}/coachContext/notes`).get();
+      if (legacyDoc.exists && legacyDoc.data().persistentNotes) {
+        data.coachNotes = [{date: "legacy", text: legacyDoc.data().persistentNotes}];
+      }
+    }
 
     // Today's workout (for workout trigger)
     if (trigger === "workout") {

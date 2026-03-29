@@ -1204,6 +1204,42 @@ textarea {
   color: var(--text-primary);
 }
 
+/* ===== Coach Notes History ===== */
+.coach-notes-history {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.coach-note-item {
+  padding: 10px 12px;
+  background: var(--bg-secondary);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  cursor: pointer;
+  transition: border-color 0.2s;
+}
+
+.coach-note-item:hover {
+  border-color: var(--accent);
+}
+
+.coach-note-date {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--accent);
+  margin-bottom: 4px;
+  text-transform: uppercase;
+}
+
+.coach-note-text {
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--text-primary);
+}
+
 /* ===== Exercise History Button ===== */
 .exercise-history-btn {
   background: none;

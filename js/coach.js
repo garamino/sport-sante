@@ -1,6 +1,7 @@
 import { getFunctions, httpsCallable } from 'https://www.gstatic.com/firebasejs/11.6.0/firebase-functions.js';
 import { app } from './auth.js';
-import { getCoachHistory } from './db.js';
+import { getCoachHistory, getCoachNote, saveCoachNote, getAllCoachNotes } from './db.js';
+import { today, formatDateFR, showToast } from './utils.js';
 
 const functions = getFunctions(app, 'europe-west1');
 const getCoachAdviceFn = httpsCallable(functions, 'getCoachAdvice');
@@ -143,4 +144,96 @@ export async function openCoachHistory() {
   } catch (err) {
     overlay.remove();
   }
+}
+
+export async function openCoachNotesModal(defaultDate) {
+  const overlay = document.createElement('div');
+  overlay.className = 'guide-modal-overlay';
+  overlay.innerHTML = `
+    <div class="guide-modal">
+      <button class="guide-modal-close">&times;</button>
+      <h3 style="font-size:16px;margin-bottom:4px">Notes pour le coach</h3>
+      <p style="font-size:12px;color:var(--text-secondary);margin-bottom:14px">
+        Informe le coach de tes blessures, douleurs, objectifs ou contraintes. Il en tiendra compte à chaque conseil.
+      </p>
+      <div class="form-group" style="margin-bottom:8px">
+        <label style="font-size:12px;color:var(--text-secondary)">Date de la note</label>
+        <input type="date" id="coach-note-date" value="${defaultDate || today()}">
+      </div>
+      <textarea id="coach-notes" placeholder="Ex: Douleur poignet droit, tendinite en récupération, objectif 65kg..." rows="3"></textarea>
+      <button class="btn btn-primary btn-small" id="save-coach-notes" style="margin-top:8px;width:100%">Sauvegarder la note</button>
+      <div style="margin-top:16px;border-top:1px solid var(--border);padding-top:12px">
+        <div style="font-size:13px;font-weight:600;margin-bottom:8px;color:var(--text-primary)">Historique des notes</div>
+        <div id="coach-notes-history" class="coach-notes-history">
+          <div class="spinner"></div>
+        </div>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+
+  const close = () => overlay.remove();
+  overlay.querySelector('.guide-modal-close').addEventListener('click', close);
+  overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
+
+  // Load note for default date
+  const note = await getCoachNote(defaultDate || today()).catch(() => null);
+  const textarea = overlay.querySelector('#coach-notes');
+  if (note?.text) textarea.value = note.text;
+
+  // Change date → load that note
+  overlay.querySelector('#coach-note-date').addEventListener('change', async (e) => {
+    const date = e.target.value;
+    if (!date) return;
+    const n = await getCoachNote(date).catch(() => null);
+    textarea.value = n?.text || '';
+  });
+
+  // Save
+  overlay.querySelector('#save-coach-notes').addEventListener('click', async (e) => {
+    const btn = e.target;
+    const date = overlay.querySelector('#coach-note-date').value;
+    const text = textarea.value.trim();
+    if (!date) { showToast('Choisis une date'); return; }
+    if (!text) { showToast('La note est vide'); return; }
+    btn.disabled = true;
+    try {
+      await saveCoachNote(date, text);
+      showToast('Note sauvegardée ✓');
+      loadHistory();
+    } catch {
+      showToast('Erreur — réessaie');
+    }
+    btn.disabled = false;
+  });
+
+  // Load history
+  async function loadHistory() {
+    const container = overlay.querySelector('#coach-notes-history');
+    if (!container) return;
+    try {
+      const notes = await getAllCoachNotes();
+      if (notes.length === 0) {
+        container.innerHTML = '<p style="font-size:13px;color:var(--text-secondary);text-align:center;padding:8px 0">Aucune note pour le moment.</p>';
+        return;
+      }
+      container.innerHTML = notes.map(n => `
+        <div class="coach-note-item" data-date="${n.date}">
+          <div class="coach-note-date">${formatDateFR(n.date)}</div>
+          <p class="coach-note-text">${n.text.replace(/\n/g, '<br>')}</p>
+        </div>
+      `).join('');
+      container.querySelectorAll('.coach-note-item').forEach(item => {
+        item.addEventListener('click', () => {
+          overlay.querySelector('#coach-note-date').value = item.dataset.date;
+          const n = notes.find(x => x.date === item.dataset.date);
+          textarea.value = n?.text || '';
+          textarea.focus();
+        });
+      });
+    } catch {
+      container.innerHTML = '<p style="font-size:13px;color:var(--danger)">Erreur de chargement</p>';
+    }
+  }
+  loadHistory();
 }

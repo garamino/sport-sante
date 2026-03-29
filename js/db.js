@@ -123,3 +123,19 @@ export async function getCoachHistory() {
   const snap = await getDoc(userDoc('coachContext/history'));
   return snap.exists() ? snap.data().entries || [] : [];
 }
+
+// === Coach Notes (historisées par date) ===
+export async function saveCoachNote(date, text) {
+  await setDoc(userDoc(`coachNotes/${date}`), { text, date, savedAt: Timestamp.now() });
+}
+
+export async function getCoachNote(date) {
+  const snap = await getDoc(userDoc(`coachNotes/${date}`));
+  return snap.exists() ? snap.data() : null;
+}
+
+export async function getAllCoachNotes() {
+  const q = query(userCollection('coachNotes'), orderBy('date', 'desc'));
+  const snap = await getDocs(q);
+  return snap.docs.map(d => d.data());
+}

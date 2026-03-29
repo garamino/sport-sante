@@ -1,7 +1,7 @@
 import { today, formatDateFR, getDayOfWeek, getWeekNumber, getPhase, showToast } from '../utils.js';
-import { getUserProfile, getWorkout, getSleep, getWeekly, getCoachNotes, saveCoachNotes } from '../db.js';
+import { getUserProfile, getWorkout, getSleep, getWeekly } from '../db.js';
 import { getDaySchedule, getExercisesForDay } from '../program-data.js';
-import { showCoachAdvice, openCoachHistory } from '../coach.js';
+import { showCoachAdvice, openCoachHistory, openCoachNotesModal } from '../coach.js';
 
 export async function render(container) {
   container.innerHTML = '<div class="spinner"></div>';
@@ -15,11 +15,10 @@ export async function render(container) {
     const phase = getPhase(weekNum);
 
     // Load today's data
-    const [workout, sleep, weekly, coachNotes] = await Promise.all([
+    const [workout, sleep, weekly] = await Promise.all([
       getWorkout(todayStr).catch(() => null),
       getSleep(todayStr).catch(() => null),
       weekNum > 0 ? getWeekly(`W${String(weekNum).padStart(2, '0')}`).catch(() => null) : null,
-      getCoachNotes().catch(() => null),
     ]);
 
     // Count exercises done today
@@ -110,14 +109,10 @@ export async function render(container) {
           </button>
         </div>
       </div>
-      <div class="card" style="margin-top:12px">
-        <div class="card-title">Notes pour le coach</div>
-        <p style="font-size:12px;color:var(--text-secondary);margin-bottom:8px">
-          Informe le coach de tes blessures, douleurs, objectifs ou contraintes. Il en tiendra compte à chaque conseil.
-        </p>
-        <textarea id="coach-notes" placeholder="Ex: Douleur poignet droit, tendinite en récupération, objectif 65kg..." rows="3">${coachNotes?.persistentNotes || ''}</textarea>
-        <button class="btn btn-primary btn-small" id="save-coach-notes" style="margin-top:8px;width:100%">Sauvegarder les notes</button>
-      </div>
+      <button class="btn btn-small" id="coach-notes-btn" style="width:100%;margin-top:12px;padding:10px 14px;font-size:13px;gap:8px;background:var(--bg-card);border:1px solid var(--border);color:var(--text-secondary)">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 5v14M5 12h14"/></svg>
+        Ajouter une note
+      </button>
 
     `;
 
@@ -146,18 +141,9 @@ export async function render(container) {
       openCoachHistory();
     });
 
-    // Save coach notes
-    document.getElementById('save-coach-notes')?.addEventListener('click', async (e) => {
-      const btn = e.target;
-      const text = document.getElementById('coach-notes').value.trim();
-      btn.disabled = true;
-      try {
-        await saveCoachNotes(text);
-        showToast('Notes coach sauvegardées ✓');
-      } catch {
-        showToast('Erreur — réessaie');
-      }
-      btn.disabled = false;
+    // Open coach notes modal
+    document.getElementById('coach-notes-btn')?.addEventListener('click', () => {
+      openCoachNotesModal(todayStr);
     });
 
   } catch (err) {
