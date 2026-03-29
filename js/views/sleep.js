@@ -1,6 +1,5 @@
 import { today, formatDateShort, formatDateFR, addDays, computeHoursSlept, showToast } from '../utils.js';
 import { getSleep, saveSleep, getRecentSleep } from '../db.js';
-import { showCoachAdvice } from '../coach.js';
 
 let currentDate = null;
 
@@ -123,7 +122,6 @@ export async function render(container, resetDate = true) {
       try {
         await saveSleep(currentDate, data);
         showToast('Sommeil enregistré ✓');
-        showCoachAdvice('sleep', currentDate);
         render(container, false);
       } catch {
         showToast('Erreur — réessaie');

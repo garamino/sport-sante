@@ -2,7 +2,6 @@ import { today, getDayOfWeek, getWeekNumber, getPhase, formatDateFR, addDays, sh
 import { getUserProfile, getWorkout, saveWorkout, getExerciseHistory } from '../db.js';
 import { getExercisesForDay, getDaySchedule } from '../program-data.js';
 import { EXERCISE_GUIDE, openExerciseGuide } from '../exercise-guide.js';
-import { showCoachAdvice } from '../coach.js';
 
 let currentDate = null;
 
@@ -205,7 +204,6 @@ export async function render(container, resetDate = true) {
         try {
           await saveWorkout(currentDate, data);
           showToast('Séance marquée non faite');
-          showCoachAdvice('workout', currentDate);
           render(container, false);
         } catch {
           showToast('Erreur — réessaie');
@@ -240,7 +238,6 @@ export async function render(container, resetDate = true) {
         try {
           await saveWorkout(currentDate, data);
           showToast('Séance enregistrée ✓');
-          showCoachAdvice('workout', currentDate);
         } catch (err) {
           showToast('Erreur — réessaie');
         }
