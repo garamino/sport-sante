@@ -4,6 +4,8 @@ import {
   setDoc,
   getDoc,
   getDocs,
+  addDoc,
+  deleteDoc,
   collection,
   query,
   orderBy,
@@ -124,18 +126,17 @@ export async function getCoachHistory() {
   return snap.exists() ? snap.data().entries || [] : [];
 }
 
-// === Coach Notes (historisées par date) ===
+// === Coach Notes (historisées) ===
 export async function saveCoachNote(date, text) {
-  await setDoc(userDoc(`coachNotes/${date}`), { text, date, savedAt: Timestamp.now() });
+  await addDoc(userCollection('coachNotes'), { text, date, savedAt: Timestamp.now() });
 }
 
-export async function getCoachNote(date) {
-  const snap = await getDoc(userDoc(`coachNotes/${date}`));
-  return snap.exists() ? snap.data() : null;
+export async function deleteCoachNote(noteId) {
+  await deleteDoc(userDoc(`coachNotes/${noteId}`));
 }
 
 export async function getAllCoachNotes() {
-  const q = query(userCollection('coachNotes'), orderBy('date', 'desc'));
+  const q = query(userCollection('coachNotes'), orderBy('savedAt', 'desc'));
   const snap = await getDocs(q);
-  return snap.docs.map(d => d.data());
+  return snap.docs.map(d => ({ id: d.id, ...d.data() }));
 }

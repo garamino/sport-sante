@@ -1,6 +1,6 @@
 import { getFunctions, httpsCallable } from 'https://www.gstatic.com/firebasejs/11.6.0/firebase-functions.js';
 import { app } from './auth.js';
-import { getCoachHistory, getCoachNote, saveCoachNote, getAllCoachNotes } from './db.js';
+import { getCoachHistory, saveCoachNote, deleteCoachNote, getAllCoachNotes } from './db.js';
 import { today, formatDateFR, showToast } from './utils.js';
 
 const functions = getFunctions(app, 'europe-west1');
@@ -161,7 +161,7 @@ export async function openCoachNotesModal(defaultDate) {
         <input type="date" id="coach-note-date" value="${defaultDate || today()}">
       </div>
       <textarea id="coach-notes" placeholder="Ex: Douleur poignet droit, tendinite en récupération, objectif 65kg..." rows="3"></textarea>
-      <button class="btn btn-primary btn-small" id="save-coach-notes" style="margin-top:8px;width:100%">Sauvegarder la note</button>
+      <button class="btn btn-primary btn-small" id="save-coach-notes" style="margin-top:8px;width:100%">Ajouter la note</button>
       <div style="margin-top:16px;border-top:1px solid var(--border);padding-top:12px">
         <div style="font-size:13px;font-weight:600;margin-bottom:8px;color:var(--text-primary)">Historique des notes</div>
         <div id="coach-notes-history" class="coach-notes-history">
@@ -176,20 +176,9 @@ export async function openCoachNotesModal(defaultDate) {
   overlay.querySelector('.guide-modal-close').addEventListener('click', close);
   overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
 
-  // Load note for default date
-  const note = await getCoachNote(defaultDate || today()).catch(() => null);
   const textarea = overlay.querySelector('#coach-notes');
-  if (note?.text) textarea.value = note.text;
 
-  // Change date → load that note
-  overlay.querySelector('#coach-note-date').addEventListener('change', async (e) => {
-    const date = e.target.value;
-    if (!date) return;
-    const n = await getCoachNote(date).catch(() => null);
-    textarea.value = n?.text || '';
-  });
-
-  // Save
+  // Save → creates a new note each time
   overlay.querySelector('#save-coach-notes').addEventListener('click', async (e) => {
     const btn = e.target;
     const date = overlay.querySelector('#coach-note-date').value;
@@ -199,7 +188,8 @@ export async function openCoachNotesModal(defaultDate) {
     btn.disabled = true;
     try {
       await saveCoachNote(date, text);
-      showToast('Note sauvegardée ✓');
+      showToast('Note ajoutée ✓');
+      textarea.value = '';
       loadHistory();
     } catch {
       showToast('Erreur — réessaie');
@@ -218,17 +208,26 @@ export async function openCoachNotesModal(defaultDate) {
         return;
       }
       container.innerHTML = notes.map(n => `
-        <div class="coach-note-item" data-date="${n.date}">
-          <div class="coach-note-date">${formatDateFR(n.date)}</div>
+        <div class="coach-note-item">
+          <div style="display:flex;justify-content:space-between;align-items:center">
+            <div class="coach-note-date">${formatDateFR(n.date)}</div>
+            <button class="coach-note-delete" data-id="${n.id}" style="background:none;border:none;color:var(--text-secondary);cursor:pointer;padding:2px 4px;font-size:14px;opacity:0.6">&times;</button>
+          </div>
           <p class="coach-note-text">${n.text.replace(/\n/g, '<br>')}</p>
         </div>
       `).join('');
-      container.querySelectorAll('.coach-note-item').forEach(item => {
-        item.addEventListener('click', () => {
-          overlay.querySelector('#coach-note-date').value = item.dataset.date;
-          const n = notes.find(x => x.date === item.dataset.date);
-          textarea.value = n?.text || '';
-          textarea.focus();
+      // Delete buttons
+      container.querySelectorAll('.coach-note-delete').forEach(btn => {
+        btn.addEventListener('click', async (e) => {
+          e.stopPropagation();
+          const id = btn.dataset.id;
+          try {
+            await deleteCoachNote(id);
+            showToast('Note supprimée');
+            loadHistory();
+          } catch {
+            showToast('Erreur — réessaie');
+          }
         });
       });
     } catch {
