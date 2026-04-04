@@ -1,4 +1,4 @@
-const CACHE_NAME = 'sport-sante-v7';
+const CACHE_NAME = 'sport-sante-v8';
 const ASSETS = [
   './',
   './index.html',
@@ -44,6 +44,9 @@ self.addEventListener('activate', (event) => {
 
 // Fetch: network-first for everything (offline fallback to cache)
 self.addEventListener('fetch', (event) => {
+  // Only cache GET requests (POST, etc. are not supported by Cache API)
+  if (event.request.method !== 'GET') return;
+
   const url = new URL(event.request.url);
 
   // version.js: always bypass HTTP cache

@@ -449,13 +449,19 @@ exports.processHealthDoc = onCall(
     };
     const mediaType = mediaTypes[ext] || "image/jpeg";
 
-    // Call Claude Vision to extract health data
+    // Call Claude to extract health data
     const typeLabels = {
       prise_de_sang: "prise de sang / bilan sanguin",
       bilan_medical: "bilan médical",
       radiologie: "radiologie / imagerie médicale",
       autre: "document médical",
     };
+
+    // PDFs use "document" type, images use "image" type
+    const isPdf = mediaType === "application/pdf";
+    const contentBlock = isPdf
+      ? { type: "document", source: { type: "base64", media_type: mediaType, data: base64Data } }
+      : { type: "image", source: { type: "base64", media_type: mediaType, data: base64Data } };
 
     try {
       const client = new Anthropic({ apiKey });
@@ -470,10 +476,7 @@ Réponds en français. Sois factuel, pas de conseil médical.`,
         messages: [{
           role: "user",
           content: [
-            {
-              type: "image",
-              source: { type: "base64", media_type: mediaType, data: base64Data },
-            },
+            contentBlock,
             {
               type: "text",
               text: `Extrais les données de ce document (${typeLabels[type] || "document médical"}, date: ${date}). Résume de manière structurée.`,
