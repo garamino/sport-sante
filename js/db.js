@@ -12,8 +12,17 @@ import {
   limit,
   Timestamp
 } from 'https://www.gstatic.com/firebasejs/11.6.0/firebase-firestore.js';
+import {
+  getStorage,
+  ref,
+  uploadBytes,
+  getDownloadURL,
+  deleteObject
+} from 'https://www.gstatic.com/firebasejs/11.6.0/firebase-storage.js';
 import { app } from './auth.js';
 import { getUid } from './auth.js';
+
+const storage = getStorage(app);
 
 const db = getFirestore(app);
 
@@ -105,6 +114,16 @@ export async function getAllWeeklies() {
   return snap.docs.map(d => d.data());
 }
 
+// === Coach Settings ===
+export async function saveCoachWindow(days) {
+  await setDoc(userDoc('settings/coachWindow'), { days, savedAt: Timestamp.now() });
+}
+
+export async function getCoachWindow() {
+  const snap = await getDoc(userDoc('settings/coachWindow'));
+  return snap.exists() ? snap.data().days : 7;
+}
+
 // === Coach IA ===
 export async function saveApiKey(key) {
   await setDoc(userDoc('settings/apiKey'), { key, savedAt: Timestamp.now() });
@@ -137,6 +156,35 @@ export async function deleteCoachNote(noteId) {
 
 export async function getAllCoachNotes() {
   const q = query(userCollection('coachNotes'), orderBy('savedAt', 'desc'));
+  const snap = await getDocs(q);
+  return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+}
+
+// === Health Documents ===
+export async function uploadHealthFile(file) {
+  const uid = getUid();
+  const fileName = `${Date.now()}_${file.name}`;
+  const storageRef = ref(storage, `users/${uid}/healthDocs/${fileName}`);
+  await uploadBytes(storageRef, file);
+  return { path: `users/${uid}/healthDocs/${fileName}`, url: await getDownloadURL(storageRef) };
+}
+
+export async function deleteHealthFile(storagePath) {
+  if (!storagePath) return;
+  const storageRef = ref(storage, storagePath);
+  await deleteObject(storageRef).catch(() => {});
+}
+
+export async function saveHealthDoc(data) {
+  return await addDoc(userCollection('healthDocs'), { ...data, savedAt: Timestamp.now() });
+}
+
+export async function deleteHealthDoc(docId) {
+  await deleteDoc(userDoc(`healthDocs/${docId}`));
+}
+
+export async function getAllHealthDocs() {
+  const q = query(userCollection('healthDocs'), orderBy('date', 'desc'));
   const snap = await getDocs(q);
   return snap.docs.map(d => ({ id: d.id, ...d.data() }));
 }

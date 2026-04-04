@@ -1,7 +1,7 @@
 import { onAuth, logout, getCurrentUser } from './auth.js';
 import { registerRoute, initRouter, navigateTo } from './router.js';
 import { updateHeader } from './components/nav.js';
-import { getUserProfile, saveApiKey } from './db.js';
+import { getUserProfile, saveApiKey, getCoachWindow, saveCoachWindow } from './db.js';
 import { showToast } from './utils.js';
 
 // Import views
@@ -11,6 +11,7 @@ import * as workoutView from './views/workout.js';
 import * as sleepView from './views/sleep.js';
 import * as weeklyView from './views/weekly.js';
 import * as chartsView from './views/charts.js';
+import * as healthView from './views/health.js';
 
 // Register routes
 registerRoute('/login', loginView);
@@ -19,6 +20,7 @@ registerRoute('/workout', workoutView);
 registerRoute('/sleep', sleepView);
 registerRoute('/weekly', weeklyView);
 registerRoute('/charts', chartsView);
+registerRoute('/health', healthView);
 
 const appContainer = document.getElementById('app');
 const header = document.getElementById('app-header');
@@ -61,6 +63,7 @@ settingsBtn.addEventListener('click', async () => {
   const user = getCurrentUser();
   const profile = await getUserProfile().catch(() => null);
   const hasKey = profile?.hasApiKey || false;
+  const coachWindow = await getCoachWindow().catch(() => 7);
 
   const overlay = document.createElement('div');
   overlay.className = 'settings-modal-overlay';
@@ -94,6 +97,16 @@ settingsBtn.addEventListener('click', async () => {
           ${hasKey ? 'Mettre à jour la clé' : 'Enregistrer la clé'}
         </button>
       </div>
+
+      <div class="settings-section">
+        <div class="settings-label">Fenêtre de données Coach IA</div>
+        <p style="font-size:12px;color:var(--text-secondary);margin:4px 0 8px">
+          Nombre de jours de séances, sommeil et notes envoyés au coach. Les données plus anciennes sont résumées automatiquement.
+        </p>
+        <select id="settings-coach-window" style="width:100%;padding:10px;background:var(--bg-secondary);color:var(--text-primary);border:1px solid rgba(255,255,255,.1);border-radius:8px;font-size:14px">
+          ${[7, 14, 21, 30].map(d => `<option value="${d}" ${d === coachWindow ? 'selected' : ''}>${d} derniers jours</option>`).join('')}
+        </select>
+      </div>
     </div>
   `;
   document.body.appendChild(overlay);
@@ -117,6 +130,16 @@ settingsBtn.addEventListener('click', async () => {
       showToast('Erreur — réessaie');
       btn.disabled = false;
       btn.textContent = hasKey ? 'Mettre à jour la clé' : 'Enregistrer la clé';
+    }
+  });
+
+  document.getElementById('settings-coach-window').addEventListener('change', async (e) => {
+    const days = parseInt(e.target.value, 10);
+    try {
+      await saveCoachWindow(days);
+      showToast(`Fenêtre coach : ${days} jours ✓`);
+    } catch {
+      showToast('Erreur — réessaie');
     }
   });
 });
