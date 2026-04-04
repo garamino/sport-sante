@@ -1,2 +1,2 @@
 // Auto-updated by deploy workflow
-export const APP_VERSION = '2026.03.29-003';
+export const APP_VERSION = '2026.04.04-001';
