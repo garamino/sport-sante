@@ -6,6 +6,7 @@ import {
   getDocs,
   addDoc,
   deleteDoc,
+  updateDoc,
   collection,
   query,
   orderBy,
@@ -177,6 +178,10 @@ export async function deleteHealthFile(storagePath) {
 
 export async function saveHealthDoc(data) {
   return await addDoc(userCollection('healthDocs'), { ...data, savedAt: Timestamp.now() });
+}
+
+export async function updateHealthDoc(docId, data) {
+  await updateDoc(userDoc(`healthDocs/${docId}`), data);
 }
 
 export async function deleteHealthDoc(docId) {

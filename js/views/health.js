@@ -1,5 +1,5 @@
 import { today, formatDateFR, showToast } from '../utils.js';
-import { uploadHealthFile, deleteHealthFile, saveHealthDoc, deleteHealthDoc, getAllHealthDocs } from '../db.js';
+import { uploadHealthFile, deleteHealthFile, saveHealthDoc, updateHealthDoc, deleteHealthDoc, getAllHealthDocs } from '../db.js';
 import { getFunctions, httpsCallable } from 'https://www.gstatic.com/firebasejs/11.6.0/firebase-functions.js';
 import { app } from '../auth.js';
 
@@ -98,14 +98,26 @@ export async function render(container) {
       <div class="card">
         <div class="card-title">Historique</div>
         ${docs.map(d => `
-          <div class="health-doc-item" style="padding:10px 0;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:flex-start">
-            <div style="flex:1;min-width:0">
-              <div style="font-size:13px;color:var(--text-secondary)">${formatDateFR(d.date)} — ${formatDocType(d.type)}</div>
-              <div style="font-size:13px;margin-top:4px;white-space:pre-wrap;overflow:hidden;max-height:80px">${escapeHtml(d.summary || d.content || '')}</div>
+          <div class="health-doc-item" style="padding:10px 0;border-bottom:1px solid var(--border)">
+            <div style="display:flex;justify-content:space-between;align-items:center;cursor:pointer" class="health-doc-header" data-id="${d.id}">
+              <div style="flex:1;min-width:0">
+                <div style="font-size:13px;color:var(--text-secondary)">${formatDateFR(d.date)} — ${formatDocType(d.type)}</div>
+                <div style="font-size:13px;margin-top:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHtml((d.summary || d.content || '').split('\n')[0])}</div>
+              </div>
+              <svg class="health-doc-chevron" data-id="${d.id}" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--text-secondary)" stroke-width="2" style="flex-shrink:0;transition:transform .2s"><polyline points="6 9 12 15 18 9"/></svg>
             </div>
-            <button class="btn btn-small health-delete-btn" data-id="${d.id}" data-path="${d.storagePath || ''}" style="color:var(--danger);background:none;padding:4px 8px;flex-shrink:0">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>
-            </button>
+            <div class="health-doc-detail hidden" id="health-detail-${d.id}" style="margin-top:10px">
+              <div class="health-doc-view" id="health-view-${d.id}" style="font-size:13px;line-height:1.6;white-space:pre-wrap;background:var(--bg-primary);padding:10px;border-radius:8px">${escapeHtml(d.summary || d.content || '')}</div>
+              <textarea class="health-doc-edit hidden" id="health-edit-${d.id}" rows="8" style="width:100%;margin-top:8px;font-size:13px">${escapeHtml(d.summary || d.content || '')}</textarea>
+              <div style="display:flex;gap:8px;margin-top:8px">
+                <button class="btn btn-small health-edit-btn" data-id="${d.id}" style="flex:1">Modifier</button>
+                <button class="btn btn-small btn-success health-save-btn hidden" data-id="${d.id}" style="flex:1">Enregistrer</button>
+                <button class="btn btn-small health-cancel-btn hidden" data-id="${d.id}" style="flex:1">Annuler</button>
+                <button class="btn btn-small health-delete-btn" data-id="${d.id}" data-path="${d.storagePath || ''}" style="color:var(--danger);background:none;padding:4px 8px">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>
+                </button>
+              </div>
+            </div>
           </div>
         `).join('')}
       </div>
@@ -244,6 +256,65 @@ export async function render(container) {
     }
   });
 
+  // --- Accordion toggle ---
+  container.querySelectorAll('.health-doc-header').forEach(header => {
+    header.addEventListener('click', () => {
+      const id = header.dataset.id;
+      const detail = document.getElementById(`health-detail-${id}`);
+      const chevron = container.querySelector(`.health-doc-chevron[data-id="${id}"]`);
+      const isOpen = !detail.classList.contains('hidden');
+      detail.classList.toggle('hidden', isOpen);
+      chevron.style.transform = isOpen ? '' : 'rotate(180deg)';
+    });
+  });
+
+  // --- Edit mode ---
+  container.querySelectorAll('.health-edit-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const id = btn.dataset.id;
+      document.getElementById(`health-view-${id}`).classList.add('hidden');
+      document.getElementById(`health-edit-${id}`).classList.remove('hidden');
+      btn.classList.add('hidden');
+      container.querySelector(`.health-save-btn[data-id="${id}"]`).classList.remove('hidden');
+      container.querySelector(`.health-cancel-btn[data-id="${id}"]`).classList.remove('hidden');
+    });
+  });
+
+  // --- Cancel edit ---
+  container.querySelectorAll('.health-cancel-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const id = btn.dataset.id;
+      document.getElementById(`health-view-${id}`).classList.remove('hidden');
+      document.getElementById(`health-edit-${id}`).classList.add('hidden');
+      container.querySelector(`.health-edit-btn[data-id="${id}"]`).classList.remove('hidden');
+      btn.classList.add('hidden');
+      container.querySelector(`.health-save-btn[data-id="${id}"]`).classList.add('hidden');
+      // Reset textarea to original value
+      const viewText = document.getElementById(`health-view-${id}`).textContent;
+      document.getElementById(`health-edit-${id}`).value = viewText;
+    });
+  });
+
+  // --- Save edit ---
+  container.querySelectorAll('.health-save-btn').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const id = btn.dataset.id;
+      const newText = document.getElementById(`health-edit-${id}`).value.trim();
+      if (!newText) { showToast('Le contenu ne peut pas être vide'); return; }
+      btn.disabled = true;
+      btn.textContent = 'Enregistrement...';
+      try {
+        await updateHealthDoc(id, { summary: newText, content: newText });
+        showToast('Document mis à jour');
+        render(container);
+      } catch {
+        showToast('Erreur');
+        btn.disabled = false;
+        btn.textContent = 'Enregistrer';
+      }
+    });
+  });
+
   // --- Delete ---
   container.querySelectorAll('.health-delete-btn').forEach(btn => {
     btn.addEventListener('click', async () => {
@@ -253,7 +324,7 @@ export async function render(container) {
       try {
         if (path) await deleteHealthFile(path);
         await deleteHealthDoc(id);
-        showToast('Supprime');
+        showToast('Supprimé');
         render(container);
       } catch {
         showToast('Erreur');
