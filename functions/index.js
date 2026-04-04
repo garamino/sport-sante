@@ -51,7 +51,15 @@ PHASES DU PROGRAMME :
 - Fondations (S1-4) : Maîtriser les mouvements, activer les muscles. Repos 90s.
 - Hypertrophie (S5-10) : Volume + intensité, +1 série/exercice, repos réduit à 60s.
 - Surcompensation (S11-13) : Pousser les limites, tempo lent, supersets, +1 série.
-- Décharge (S14) : Récupération active, volume ÷ 2.`;
+- Décharge (S14) : Récupération active, volume ÷ 2.
+
+CONSEIL SUR LA PROCHAINE SÉANCE :
+Termine TOUJOURS ton conseil par un avis sur la prochaine séance à venir (indiquée dans "PROCHAINE SÉANCE").
+- Si la séance du jour n'a pas encore eu lieu : conseille sur cette séance.
+- Si la séance du jour est déjà faite : conseille sur celle du lendemain.
+- Indique si elle peut se faire normalement, ou s'il faut adapter/alléger certains exercices.
+- Prends en compte : douleurs/blessures signalées, qualité du sommeil récent, charge d'entraînement récente, phase du programme.
+- Pour un jour de repos : confirme le repos ou suggère de la mobilité/étirements si pertinent.`;
 
 function buildUserMessage(trigger, date, data, coachWindowDays, userMessage) {
   const parts = [];
@@ -155,6 +163,39 @@ function buildUserMessage(trigger, date, data, coachWindowDays, userMessage) {
     data.recentWeeklies.forEach((w) => {
       parts.push(`S${w.week} (${w.phase}) : ${w.weight}kg (${w.deltaWeight >= 0 ? "+" : ""}${w.deltaWeight}kg) | Muscu: ${w.musculationDone}/${w.musculationTotal} | Vélo: ${w.bikeDone}/${w.bikeTotal}`);
     });
+  }
+
+  // Next session info
+  const WEEKLY_SCHEDULE = [
+    { day: 1, label: "Lundi", type: "muscu", group: "Poitrine / Triceps", exercises: "pompes classiques, inclinées, dips, pompes serrées, diamant" },
+    { day: 2, label: "Mardi", type: "velo", group: "Vélo", exercises: "cardio endurance 45-60 min, FC 110-128 bpm" },
+    { day: 3, label: "Mercredi", type: "muscu", group: "Dos / Biceps", exercises: "rowing un bras, rowing penché, curl biceps, curl marteau, superman" },
+    { day: 4, label: "Jeudi", type: "muscu", group: "Jambes / Fessiers", exercises: "squats, fentes avant, pont fessier, squat sauté, mollets debout" },
+    { day: 5, label: "Vendredi", type: "velo", group: "Vélo", exercises: "cardio endurance 45-60 min" },
+    { day: 6, label: "Samedi", type: "muscu", group: "Épaules / Abdos + Full body", exercises: "pompes pike, élévations latérales, gainage, crunchs, relevés jambes, rotation russe, burpees, pompes explosives" },
+    { day: 0, label: "Dimanche", type: "repos", group: "Repos", exercises: "repos complet" },
+  ];
+
+  const todayDate = new Date(date + "T12:00:00");
+  const todayDow = todayDate.getDay(); // 0=dim, 1=lun...
+  const todaySchedule = WEEKLY_SCHEDULE.find(s => s.day === todayDow);
+  const todayDone = trigger === "workout" && data.todayWorkout;
+
+  let nextSchedule, nextLabel;
+  if (todayDone || todaySchedule.type === "repos") {
+    // Today done or rest → show tomorrow
+    const tomorrowDow = (todayDow + 1) % 7;
+    nextSchedule = WEEKLY_SCHEDULE.find(s => s.day === tomorrowDow);
+    nextLabel = `demain (${nextSchedule.label})`;
+  } else {
+    nextSchedule = todaySchedule;
+    nextLabel = `aujourd'hui (${nextSchedule.label})`;
+  }
+
+  parts.push(`\n=== PROCHAINE SÉANCE : ${nextLabel} ===`);
+  parts.push(`Type : ${nextSchedule.type} | Groupe : ${nextSchedule.group}`);
+  if (nextSchedule.type !== "repos") {
+    parts.push(`Exercices prévus : ${nextSchedule.exercises}`);
   }
 
   // Previous coach advice (for continuity)
@@ -406,7 +447,7 @@ exports.getCoachAdvice = onCall(
       const client = new Anthropic({ apiKey });
       const response = await client.messages.create({
         model: "claude-sonnet-4-20250514",
-        max_tokens: 300,
+        max_tokens: 400,
         temperature: 0.3,
         system: SYSTEM_PROMPT,
         messages: [{ role: "user", content: promptMessage }],
