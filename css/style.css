@@ -1132,6 +1132,26 @@ textarea {
   color: var(--accent);
 }
 
+.coach-user-input {
+  width: 100%;
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text-primary);
+  padding: 8px 10px;
+  font-size: 13px;
+  resize: none;
+  font-family: inherit;
+}
+.coach-user-input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+.coach-input-zone.hidden,
+.coach-message.hidden {
+  display: none;
+}
+
 .coach-text {
   font-size: 14px;
   line-height: 1.5;

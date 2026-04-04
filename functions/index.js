@@ -41,7 +41,7 @@ PHASES DU PROGRAMME :
 - Surcompensation (S11-13) : Pousser les limites, tempo lent, supersets, +1 série.
 - Décharge (S14) : Récupération active, volume ÷ 2.`;
 
-function buildUserMessage(trigger, date, data, coachWindowDays) {
+function buildUserMessage(trigger, date, data, coachWindowDays, userMessage) {
   const parts = [];
 
   // Historical summary (data older than the window)
@@ -154,7 +154,13 @@ function buildUserMessage(trigger, date, data, coachWindowDays) {
     parts.push(`\nTiens compte de tes conseils précédents pour assurer la continuité. Ne te répète pas.`);
   }
 
-  parts.push(`\nDonne un conseil personnalisé basé sur ces données. Sois concis (2-4 phrases).`);
+  if (userMessage) {
+    parts.push(`\n=== MESSAGE DE L'UTILISATEUR ===`);
+    parts.push(userMessage.slice(0, 300));
+    parts.push(`\nRéponds à sa question/demande en priorité, tout en t'appuyant sur ses données. Sois concis (2-4 phrases).`);
+  } else {
+    parts.push(`\nDonne un conseil personnalisé basé sur ces données. Sois concis (2-4 phrases).`);
+  }
 
   return parts.join("\n");
 }
@@ -169,7 +175,7 @@ exports.getCoachAdvice = onCall(
     const uid = request.auth.uid;
 
     // 2. Validate input
-    const { trigger, date } = request.data;
+    const { trigger, date, userMessage } = request.data;
     if (!["workout", "sleep", "weight"].includes(trigger)) {
       throw new HttpsError("invalid-argument", "Trigger invalide.");
     }
@@ -381,7 +387,7 @@ exports.getCoachAdvice = onCall(
     }
 
     // 8. Build prompt and call Claude
-    const userMessage = buildUserMessage(trigger, date, data, coachWindowDays);
+    const promptMessage = buildUserMessage(trigger, date, data, coachWindowDays, userMessage);
 
     try {
       const client = new Anthropic({ apiKey });
@@ -389,7 +395,7 @@ exports.getCoachAdvice = onCall(
         model: "claude-sonnet-4-20250514",
         max_tokens: 300,
         system: SYSTEM_PROMPT,
-        messages: [{ role: "user", content: userMessage }],
+        messages: [{ role: "user", content: promptMessage }],
       });
 
       const advice = response.content[0]?.text || "";

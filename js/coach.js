@@ -16,7 +16,7 @@ export function showCoachAdvice(trigger, date) {
   // Remove any existing coach overlay
   document.querySelector('.coach-overlay')?.remove();
 
-  // Create floating overlay at bottom of screen
+  // Create floating overlay with optional user message input
   const overlay = document.createElement('div');
   overlay.className = 'coach-overlay';
   overlay.innerHTML = `
@@ -26,7 +26,14 @@ export function showCoachAdvice(trigger, date) {
         <span class="coach-icon">🐻</span>
         <span class="coach-label">Coach IA</span>
       </div>
-      <div class="coach-message">
+      <div class="coach-input-zone">
+        <textarea class="coach-user-input" placeholder="Une question, une douleur, un ressenti ? (optionnel)" maxlength="300" rows="2"></textarea>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-top:6px">
+          <span class="coach-char-count" style="font-size:11px;color:var(--text-secondary)">0/300</span>
+          <button class="btn btn-primary btn-small coach-send-btn" style="padding:6px 16px;font-size:13px">Envoyer</button>
+        </div>
+      </div>
+      <div class="coach-message hidden">
         <div class="coach-loading"><span></span><span></span><span></span></div>
       </div>
     </div>
@@ -36,10 +43,27 @@ export function showCoachAdvice(trigger, date) {
   // Close button
   overlay.querySelector('.coach-close').addEventListener('click', () => overlay.remove());
 
-  // Fetch advice
-  (async () => {
-    try {
-      const result = await getCoachAdviceFn({ trigger, date });
+  // Char counter
+  const textarea = overlay.querySelector('.coach-user-input');
+  const counter = overlay.querySelector('.coach-char-count');
+  textarea.addEventListener('input', () => {
+    counter.textContent = `${textarea.value.length}/300`;
+  });
+
+  // Send button
+  overlay.querySelector('.coach-send-btn').addEventListener('click', () => {
+    const userMessage = textarea.value.trim() || null;
+    const inputZone = overlay.querySelector('.coach-input-zone');
+    const messageZone = overlay.querySelector('.coach-message');
+    inputZone.classList.add('hidden');
+    messageZone.classList.remove('hidden');
+    fetchCoachAdvice(overlay, trigger, date, userMessage);
+  });
+}
+
+async function fetchCoachAdvice(overlay, trigger, date, userMessage) {
+  try {
+    const result = await getCoachAdviceFn({ trigger, date, userMessage });
       const data = result.data;
       const messageEl = overlay.querySelector('.coach-message');
 
@@ -74,7 +98,6 @@ export function showCoachAdvice(trigger, date) {
         overlay.remove();
       }
     }
-  })();
 }
 
 function formatAdvice(text) {
