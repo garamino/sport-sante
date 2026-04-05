@@ -1,6 +1,6 @@
 import { today, getDayOfWeek, getWeekNumber, getPhase, formatDateFR, addDays, showToast } from '../utils.js';
 import { getUserProfile, getWorkout, saveWorkout, getExerciseHistory } from '../db.js';
-import { getExercisesForDay, getDaySchedule } from '../program-data.js';
+import { getExercisesForDay, getDaySchedule, WEEKLY_SCHEDULE } from '../program-data.js';
 import { EXERCISE_GUIDE, openExerciseGuide } from '../exercise-guide.js';
 
 let currentDate = null;
@@ -11,14 +11,18 @@ export async function render(container, resetDate = true) {
 
   try {
     const profile = await getUserProfile();
-    const dayOfWeek = getDayOfWeek(currentDate);
-    const schedule = getDaySchedule(dayOfWeek);
+    const naturalDayOfWeek = getDayOfWeek(currentDate);
     const weekNum = profile?.startDate ? getWeekNumber(profile.startDate, currentDate) : 1;
     const phase = getPhase(weekNum);
-    const exercises = getExercisesForDay(dayOfWeek, phase);
 
     // Load existing data for this date
     const existing = await getWorkout(currentDate);
+
+    // Support session override (moved from another day)
+    const effectiveDayOfWeek = existing?.overrideDayOfWeek || naturalDayOfWeek;
+    const schedule = getDaySchedule(effectiveDayOfWeek);
+    const exercises = getExercisesForDay(effectiveDayOfWeek, phase);
+    const isOverridden = effectiveDayOfWeek !== naturalDayOfWeek;
 
     // Check if an extra activity was added (or existed in DB)
     const hasExtraVelo = existing?.extraActivities?.includes('velo');
@@ -50,6 +54,22 @@ export async function render(container, resetDate = true) {
       <div class="card" style="text-align:center;padding:10px">
         <strong>${schedule.icon} ${schedule.label}</strong>
         <span style="font-size:12px;color:var(--text-secondary);margin-left:8px">${phase} · S${weekNum}</span>
+        ${isOverridden ? `<div style="font-size:11px;color:var(--warning);margin-top:4px">Séance déplacée (initialement : ${getDaySchedule(naturalDayOfWeek).label})</div>` : ''}
+      </div>
+
+      <div class="session-override-area">
+        <button class="btn btn-small session-override-btn" id="change-session-btn">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M1 4v6h6"/><path d="M23 20v-6h-6"/><path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 0 1 3.51 15"/></svg>
+          Changer la séance
+        </button>
+        <div class="session-picker hidden" id="session-picker">
+          ${Object.entries(WEEKLY_SCHEDULE).map(([day, s]) => `
+            <button class="session-picker-option ${parseInt(day) === effectiveDayOfWeek ? 'active' : ''}" data-day="${day}">
+              <span class="session-picker-icon">${s.icon}</span>
+              <span class="session-picker-label">${s.label}</span>
+            </button>
+          `).join('')}
+        </div>
       </div>
 
       ${existing?.skipped ? `
@@ -120,6 +140,21 @@ export async function render(container, resetDate = true) {
       }
     });
 
+    // Session override picker
+    const changeSessionBtn = document.getElementById('change-session-btn');
+    const sessionPicker = document.getElementById('session-picker');
+    changeSessionBtn.addEventListener('click', () => {
+      sessionPicker.classList.toggle('hidden');
+    });
+    sessionPicker.querySelectorAll('.session-picker-option').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const newDay = parseInt(btn.dataset.day);
+        const overrideData = { overrideDayOfWeek: newDay === naturalDayOfWeek ? null : newDay };
+        await saveWorkout(currentDate, { ...existing || {}, ...overrideData });
+        render(container, false);
+      });
+    });
+
     // Add activity button
     const addBtn = document.getElementById('add-activity-btn');
     if (addBtn) {
@@ -186,6 +221,7 @@ export async function render(container, resetDate = true) {
           muscleGroup: schedule.label,
           skipped: true,
           extraActivities: existing?.extraActivities || [],
+          overrideDayOfWeek: existing?.overrideDayOfWeek || null,
         };
 
         if (schedule.type === 'muscu') {
@@ -257,6 +293,7 @@ function buildSaveData(schedule, exercises, weekNum, phase, existing) {
     dayType: schedule.type,
     muscleGroup: schedule.label,
     extraActivities: existing?.extraActivities || [],
+    overrideDayOfWeek: existing?.overrideDayOfWeek || null,
   };
 
   if (schedule.type === 'muscu') {

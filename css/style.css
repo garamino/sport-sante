@@ -1360,6 +1360,56 @@ textarea {
   border-color: var(--accent);
 }
 
+/* ===== Session Override Picker ===== */
+.session-override-area {
+  text-align: center;
+  margin-bottom: 8px;
+}
+.session-override-btn {
+  background: none !important;
+  border: 1px solid var(--border) !important;
+  color: var(--text-secondary) !important;
+  font-size: 12px !important;
+  gap: 6px;
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 12px !important;
+}
+.session-override-btn:hover {
+  border-color: var(--accent) !important;
+  color: var(--accent) !important;
+}
+.session-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 8px;
+}
+.session-picker.hidden { display: none; }
+.session-picker-option {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  font-size: 13px;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+}
+.session-picker-option:hover {
+  border-color: var(--accent);
+  background: var(--bg-secondary);
+}
+.session-picker-option.active {
+  border-color: var(--accent);
+  background: rgba(79, 195, 247, 0.1);
+}
+.session-picker-icon { font-size: 18px; }
+.session-picker-label { flex: 1; text-align: left; }
+
 /* ===== Scrollbar ===== */
 ::-webkit-scrollbar { width: 4px; }
 ::-webkit-scrollbar-track { background: var(--bg-primary); }
