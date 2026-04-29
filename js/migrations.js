@@ -12,18 +12,15 @@ function shortId() {
   return Math.random().toString(36).slice(2, 10);
 }
 
-// Migre les doses (champ structuré sleep.meds OU mentions parsées dans sleep.note)
-// vers la collection intakes/{date}, puis supprime le champ legacy meds.
-// Idempotent : dédoublonne par (product, quantity) sur chaque date.
-export async function migrateMedsToIntakes() {
-  const profile = await getUserProfile().catch(() => null);
-  if (profile?.migrations?.intakesV2) return;
-
+async function runMigration() {
   const allSleep = await getAllSleep().catch(() => []);
+  console.log(`[migration] ${allSleep.length} docs sleep à scanner`);
+  let totalAdded = 0;
+  let datesTouched = 0;
+
   for (const s of allSleep) {
     if (!s?.date) continue;
 
-    // Collecte des doses : structuré + parsé depuis la note
     const doses = { metasleep: '', trazodone: '', stilnoct: '' };
     if (s.meds && typeof s.meds === 'object') {
       for (const k of Object.keys(doses)) if (s.meds[k]) doses[k] = s.meds[k];
@@ -45,6 +42,9 @@ export async function migrateMedsToIntakes() {
       const toAdd = newEntries.filter(e => !existingSigs.has(sig(e)));
       if (toAdd.length > 0) {
         await saveIntakes(s.date, [...existingEntries, ...toAdd]);
+        totalAdded += toAdd.length;
+        datesTouched++;
+        console.log(`[migration] ${s.date} : +${toAdd.length} prise(s)`, toAdd.map(e => `${e.product} ${e.quantity}`));
       }
     }
 
@@ -53,5 +53,22 @@ export async function migrateMedsToIntakes() {
     }
   }
 
-  await saveUserProfile({ migrations: { ...(profile?.migrations || {}), intakesV1: true, intakesV2: true } });
+  console.log(`[migration] terminé — ${totalAdded} prises ajoutées sur ${datesTouched} dates`);
+  return { totalAdded, datesTouched };
+}
+
+export async function migrateMedsToIntakes() {
+  const profile = await getUserProfile().catch(() => null);
+  if (profile?.migrations?.intakesV3) return;
+  console.log('[migration] démarrage intakesV3...');
+  await runMigration();
+  await saveUserProfile({ migrations: { ...(profile?.migrations || {}), intakesV1: true, intakesV2: true, intakesV3: true } });
+}
+
+// Permet de forcer la migration depuis la console : window.__forceIntakesMigration()
+if (typeof window !== 'undefined') {
+  window.__forceIntakesMigration = async () => {
+    console.log('[migration] FORCE — exécution sans flag');
+    return runMigration();
+  };
 }

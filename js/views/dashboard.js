@@ -94,6 +94,10 @@ export async function render(container) {
           <div class="quick-action-icon" style="background:var(--success)">⚖️</div>
           <span>Pesée & résumé hebdo</span>
         </a>
+        <a href="#/intakes" class="quick-action">
+          <div class="quick-action-icon" style="background:#26a69a">💊</div>
+          <span>Mes prises</span>
+        </a>
       </div>
 
       <div style="display:flex;align-items:center;justify-content:space-between;margin-top:24px">
