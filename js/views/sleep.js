@@ -1,5 +1,6 @@
 import { today, formatDateShort, formatDateFR, addDays, computeHoursSlept, showToast } from '../utils.js';
-import { getSleep, saveSleep, getRecentSleep } from '../db.js';
+import { getSleep, saveSleep, getRecentSleep, getAllSleep } from '../db.js';
+import { resolveMeds, stripMedsFromNote } from '../sleep-meds.js';
 
 let currentDate = null;
 
@@ -12,6 +13,8 @@ export async function render(container, resetDate = true) {
       getSleep(currentDate).catch(() => null),
       getRecentSleep(7).catch(() => []),
     ]);
+
+    const meds = resolveMeds(existing);
 
     container.innerHTML = `
       <div class="date-nav">
@@ -40,11 +43,35 @@ export async function render(container, resetDate = true) {
           <div class="quality-display" id="quality-display">${existing?.quality || 5}</div>
         </div>
         <div class="form-group">
+          <label>Metasleep</label>
+          <select id="sleep-metasleep">
+            <option value=""${meds.metasleep === '' ? ' selected' : ''}>—</option>
+            <option value="1/2"${meds.metasleep === '1/2' ? ' selected' : ''}>1/2</option>
+            <option value="1"${meds.metasleep === '1' ? ' selected' : ''}>1</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Trazodone</label>
+          <select id="sleep-trazodone">
+            <option value=""${meds.trazodone === '' ? ' selected' : ''}>—</option>
+            <option value="1/4"${meds.trazodone === '1/4' ? ' selected' : ''}>1/4</option>
+            <option value="1/2"${meds.trazodone === '1/2' ? ' selected' : ''}>1/2</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Stilnoct</label>
+          <select id="sleep-stilnoct">
+            <option value=""${meds.stilnoct === '' ? ' selected' : ''}>—</option>
+            <option value="1/2"${meds.stilnoct === '1/2' ? ' selected' : ''}>1/2</option>
+          </select>
+        </div>
+        <div class="form-group">
           <label>Note</label>
           <textarea id="sleep-note" placeholder="Comment s'est passée ta nuit ?">${existing?.note || ''}</textarea>
         </div>
 
         <button class="btn btn-success" id="save-sleep">Enregistrer</button>
+        <button class="btn" id="export-sleep" style="margin-top:8px;width:100%">Exporter (TSV)</button>
       </div>
 
       ${recent.length > 0 ? `
@@ -92,6 +119,68 @@ export async function render(container, resetDate = true) {
       display.textContent = slider.value;
     });
 
+    // Export TSV
+    document.getElementById('export-sleep').addEventListener('click', async (e) => {
+      const btn = e.target;
+      btn.disabled = true;
+      btn.textContent = 'Export...';
+      try {
+        const all = await getAllSleep();
+        const header = ['Date', 'Qualité', 'Coucher', 'Réveil', 'Heures dormies', 'Metasleep', 'Trazodone', 'Stilnoct', 'Note'];
+        const rows = all.map(s => {
+          const m = resolveMeds(s);
+          const cleanNote = stripMedsFromNote(s.note || '').replace(/[\t\r\n]+/g, ' ');
+          return [
+            s.date || '',
+            s.quality ?? '',
+            s.bedtime || '',
+            s.wakeTime || '',
+            s.hoursSleptHHMM || (s.hoursSlept ? String(s.hoursSlept).replace('.', ',') : ''),
+            m.metasleep,
+            m.trazodone,
+            m.stilnoct,
+            cleanNote,
+          ].join('\t');
+        });
+        const tsv = [header.join('\t'), ...rows].join('\n');
+        let copied = false;
+        try {
+          await navigator.clipboard.writeText(tsv);
+          copied = true;
+        } catch {
+          // Fallback 1 : execCommand sur textarea temporaire
+          const ta = document.createElement('textarea');
+          ta.value = tsv;
+          ta.style.position = 'fixed';
+          ta.style.opacity = '0';
+          document.body.appendChild(ta);
+          ta.select();
+          try { copied = document.execCommand('copy'); } catch { copied = false; }
+          document.body.removeChild(ta);
+        }
+        if (copied) {
+          showToast(`${all.length} nuits copiées ✓`);
+        } else {
+          // Fallback 2 : téléchargement
+          const blob = new Blob([tsv], { type: 'text/tab-separated-values;charset=utf-8' });
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = `sommeil_${today()}.tsv`;
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+          URL.revokeObjectURL(url);
+          showToast(`${all.length} nuits téléchargées ✓`);
+        }
+      } catch (err) {
+        showToast('Erreur export — ' + err.message);
+      } finally {
+        btn.disabled = false;
+        btn.textContent = 'Exporter (TSV)';
+      }
+    });
+
     // Save
     document.getElementById('save-sleep').addEventListener('click', async (e) => {
       const btn = e.target;
@@ -117,6 +206,11 @@ export async function render(container, resetDate = true) {
         hoursSleptHHMM: hhmm,
         quality: parseInt(slider.value),
         note: document.getElementById('sleep-note').value,
+        meds: {
+          metasleep: document.getElementById('sleep-metasleep').value,
+          trazodone: document.getElementById('sleep-trazodone').value,
+          stilnoct:  document.getElementById('sleep-stilnoct').value,
+        },
       };
 
       try {
