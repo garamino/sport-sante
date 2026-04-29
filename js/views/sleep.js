@@ -18,7 +18,13 @@ export async function render(container, resetDate = true) {
       getIntakes(prevDate).catch(() => null),
     ]);
 
-    const prevEntries = (prevIntakes?.entries || []).slice().sort((a, b) => (a.time || '').localeCompare(b.time || ''));
+    const prevEntries = (prevIntakes?.entries || []).slice().sort((a, b) => {
+      const ta = a.time || '', tb = b.time || '';
+      if (!ta && !tb) return 0;
+      if (!ta) return 1;
+      if (!tb) return -1;
+      return ta.localeCompare(tb);
+    });
 
     container.innerHTML = `
       <div class="date-nav-row">
@@ -64,10 +70,11 @@ export async function render(container, resetDate = true) {
         ` : `
           <div>
             ${prevEntries.map(e => `
-              <div class="sleep-history-item">
-                <div>
-                  <div style="font-weight:600">${e.product}</div>
-                  <div style="font-size:12px;color:var(--text-secondary)">${fmtQty(e.quantity)}${e.time ? ' · ' + e.time : ''}</div>
+              <div class="intake-item">
+                <div class="intake-item-line">
+                  <span class="intake-time">${e.time || '—'}</span>
+                  <span class="intake-qty">${fmtQty(e.quantity)}</span>
+                  <span class="intake-product">${e.product}</span>
                 </div>
               </div>
             `).join('')}

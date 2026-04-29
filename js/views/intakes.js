@@ -8,6 +8,7 @@ const PRODUCTS = [
   'Stilnoct 10mg',
   'Ashwagandha 300mg',
   'L-Théanine 200mg',
+  'D-Pearls 38 microgr',
 ];
 
 const QUANTITIES = ['1', '1/2', '1/4'];
@@ -23,7 +24,15 @@ function shortId() {
 }
 
 function sortEntries(arr) {
-  return [...arr].sort((a, b) => (a.time || '').localeCompare(b.time || ''));
+  // Tri croissant par heure ; les entrées sans heure vont à la fin
+  return [...arr].sort((a, b) => {
+    const ta = a.time || '';
+    const tb = b.time || '';
+    if (!ta && !tb) return 0;
+    if (!ta) return 1;
+    if (!tb) return -1;
+    return ta.localeCompare(tb);
+  });
 }
 
 export async function render(container, resetDate = true) {
@@ -99,9 +108,10 @@ function renderList() {
   }
   return entries.map(e => `
     <div class="intake-item" data-id="${e.id}">
-      <div class="intake-item-main">
-        <div class="intake-item-product">${e.product}</div>
-        <div class="intake-item-meta">${fmtQty(e.quantity)}${e.time ? ' · ' + e.time : ''}</div>
+      <div class="intake-item-line">
+        <span class="intake-time">${e.time || '—'}</span>
+        <span class="intake-qty">${fmtQty(e.quantity)}</span>
+        <span class="intake-product">${e.product}</span>
       </div>
       <div class="intake-item-actions">
         <button class="intake-edit" title="Modifier">✎</button>

@@ -802,6 +802,30 @@ textarea {
 .intake-item-main { flex: 1; min-width: 0; }
 .intake-item-product { font-weight: 600; }
 .intake-item-meta { font-size: 12px; color: var(--text-secondary); margin-top: 2px; }
+.intake-item-line {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  font-size: 14px;
+}
+.intake-item-line .intake-time {
+  font-variant-numeric: tabular-nums;
+  color: var(--accent);
+  font-weight: 600;
+  min-width: 44px;
+}
+.intake-item-line .intake-qty {
+  font-weight: 600;
+  min-width: 20px;
+}
+.intake-item-line .intake-product {
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .intake-item-actions { display: flex; gap: 6px; flex-shrink: 0; }
 .intake-item-actions button {
   background: var(--bg-secondary);
