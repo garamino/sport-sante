@@ -1,4 +1,5 @@
 import { getUserProfile, saveUserProfile, getAllSleep, getIntakes, saveIntakes, deleteSleepMedsField } from './db.js';
+import { parseMeds } from './sleep-meds.js';
 
 const LEGACY_MED_TO_PRODUCT = {
   metasleep: 'Metasleep',
@@ -11,25 +12,34 @@ function shortId() {
   return Math.random().toString(36).slice(2, 10);
 }
 
-// Migre les champs sleep.meds (legacy) vers la collection intakes/{date}
-// puis supprime le champ meds sur le doc sleep.
+// Migre les doses (champ structuré sleep.meds OU mentions parsées dans sleep.note)
+// vers la collection intakes/{date}, puis supprime le champ legacy meds.
+// Idempotent : dédoublonne par (product, quantity) sur chaque date.
 export async function migrateMedsToIntakes() {
   const profile = await getUserProfile().catch(() => null);
-  if (profile?.migrations?.intakesV1) return;
+  if (profile?.migrations?.intakesV2) return;
 
   const allSleep = await getAllSleep().catch(() => []);
   for (const s of allSleep) {
-    if (!s?.meds || !s.date) continue;
+    if (!s?.date) continue;
+
+    // Collecte des doses : structuré + parsé depuis la note
+    const doses = { metasleep: '', trazodone: '', stilnoct: '' };
+    if (s.meds && typeof s.meds === 'object') {
+      for (const k of Object.keys(doses)) if (s.meds[k]) doses[k] = s.meds[k];
+    }
+    const parsed = parseMeds(s.note || '');
+    for (const k of Object.keys(doses)) if (!doses[k] && parsed[k]) doses[k] = parsed[k];
 
     const newEntries = [];
     for (const [legacyKey, product] of Object.entries(LEGACY_MED_TO_PRODUCT)) {
-      const q = s.meds[legacyKey];
+      const q = doses[legacyKey];
       if (q) newEntries.push({ id: shortId(), time: '', product, quantity: q });
     }
+
     if (newEntries.length > 0) {
       const existing = await getIntakes(s.date).catch(() => null);
       const existingEntries = existing?.entries || [];
-      // Dédoublonne : ne ré-ajoute pas un (product, quantity) déjà présent
       const sig = e => `${e.product}|${e.quantity}`;
       const existingSigs = new Set(existingEntries.map(sig));
       const toAdd = newEntries.filter(e => !existingSigs.has(sig(e)));
@@ -38,8 +48,10 @@ export async function migrateMedsToIntakes() {
       }
     }
 
-    await deleteSleepMedsField(s.date).catch(() => {});
+    if (s.meds) {
+      await deleteSleepMedsField(s.date).catch(() => {});
+    }
   }
 
-  await saveUserProfile({ migrations: { ...(profile?.migrations || {}), intakesV1: true } });
+  await saveUserProfile({ migrations: { ...(profile?.migrations || {}), intakesV1: true, intakesV2: true } });
 }
