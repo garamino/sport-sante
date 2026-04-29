@@ -1,74 +1,75 @@
-import { getUserProfile, saveUserProfile, getAllSleep, getIntakes, saveIntakes, deleteSleepMedsField } from './db.js';
-import { parseMeds } from './sleep-meds.js';
+import { getUserProfile, saveUserProfile, getAllIntakes, getIntakes, saveIntakes } from './db.js';
+import { Timestamp, getFirestore, doc, deleteDoc } from 'https://www.gstatic.com/firebasejs/11.6.0/firebase-firestore.js';
+import { app } from './auth.js';
+import { getUid } from './auth.js';
 
-const LEGACY_MED_TO_PRODUCT = {
-  metasleep: 'Metasleep',
-  trazodone: 'Trazodone 100mg',
-  stilnoct:  'Stilnoct 10mg',
-};
+const db = getFirestore(app);
 
-function shortId() {
-  if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID().slice(0, 8);
-  return Math.random().toString(36).slice(2, 10);
+function addDays(dateStr, n) {
+  const d = new Date(dateStr + 'T12:00:00');
+  d.setDate(d.getDate() + n);
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  return `${yyyy}-${mm}-${dd}`;
 }
 
-async function runMigration() {
-  const allSleep = await getAllSleep().catch(() => []);
-  console.log(`[migration] ${allSleep.length} docs sleep à scanner`);
-  let totalAdded = 0;
-  let datesTouched = 0;
+// V4 — Décale d'1 jour vers le passé toutes les entrées intakes sans heure
+// (signature des prises migrées depuis sleep.note/meds : elles correspondent
+// aux prises du soir précédant la nuit, donc J-1).
+async function shiftMigratedIntakesByOneDay() {
+  const allDocs = await getAllIntakes().catch(() => []);
+  console.log(`[migration v4] ${allDocs.length} docs intakes à scanner`);
+  let totalShifted = 0;
 
-  for (const s of allSleep) {
-    if (!s?.date) continue;
-
-    const doses = { metasleep: '', trazodone: '', stilnoct: '' };
-    if (s.meds && typeof s.meds === 'object') {
-      for (const k of Object.keys(doses)) if (s.meds[k]) doses[k] = s.meds[k];
-    }
-    const parsed = parseMeds(s.note || '');
-    for (const k of Object.keys(doses)) if (!doses[k] && parsed[k]) doses[k] = parsed[k];
-
-    const newEntries = [];
-    for (const [legacyKey, product] of Object.entries(LEGACY_MED_TO_PRODUCT)) {
-      const q = doses[legacyKey];
-      if (q) newEntries.push({ id: shortId(), time: '', product, quantity: q });
-    }
-
-    if (newEntries.length > 0) {
-      const existing = await getIntakes(s.date).catch(() => null);
-      const existingEntries = existing?.entries || [];
-      const sig = e => `${e.product}|${e.quantity}`;
-      const existingSigs = new Set(existingEntries.map(sig));
-      const toAdd = newEntries.filter(e => !existingSigs.has(sig(e)));
-      if (toAdd.length > 0) {
-        await saveIntakes(s.date, [...existingEntries, ...toAdd]);
-        totalAdded += toAdd.length;
-        datesTouched++;
-        console.log(`[migration] ${s.date} : +${toAdd.length} prise(s)`, toAdd.map(e => `${e.product} ${e.quantity}`));
-      }
-    }
-
-    if (s.meds) {
-      await deleteSleepMedsField(s.date).catch(() => {});
+  // On collecte d'abord tout en mémoire pour éviter les conflits entre lectures/écritures
+  const plan = [];
+  for (const docData of allDocs) {
+    const entries = docData.entries || [];
+    const toShift = entries.filter(e => !e.time);
+    const toKeep = entries.filter(e => e.time);
+    if (toShift.length > 0) {
+      plan.push({ date: docData.date, toShift, toKeep });
     }
   }
 
-  console.log(`[migration] terminé — ${totalAdded} prises ajoutées sur ${datesTouched} dates`);
-  return { totalAdded, datesTouched };
+  for (const { date, toShift, toKeep } of plan) {
+    const targetDate = addDays(date, -1);
+
+    // Ajoute à J-1 avec dédup (product, quantity)
+    const targetDoc = await getIntakes(targetDate).catch(() => null);
+    const targetEntries = targetDoc?.entries || [];
+    const sig = e => `${e.product}|${e.quantity}|${e.time || ''}`;
+    const targetSigs = new Set(targetEntries.map(sig));
+    const toAdd = toShift.filter(e => !targetSigs.has(sig(e)));
+    if (toAdd.length > 0) {
+      await saveIntakes(targetDate, [...targetEntries, ...toAdd]);
+    }
+
+    // Réécrit le doc source : garde uniquement les entrées avec heure, ou supprime si vide
+    if (toKeep.length > 0) {
+      await saveIntakes(date, toKeep);
+    } else {
+      await deleteDoc(doc(db, 'users', getUid(), 'intakes', date)).catch(() => {});
+    }
+
+    totalShifted += toShift.length;
+    console.log(`[migration v4] ${date} → ${targetDate} : ${toShift.length} prise(s) décalée(s)`);
+  }
+
+  console.log(`[migration v4] terminé — ${totalShifted} prises décalées`);
+  return { totalShifted };
 }
 
 export async function migrateMedsToIntakes() {
   const profile = await getUserProfile().catch(() => null);
-  if (profile?.migrations?.intakesV3) return;
-  console.log('[migration] démarrage intakesV3...');
-  await runMigration();
-  await saveUserProfile({ migrations: { ...(profile?.migrations || {}), intakesV1: true, intakesV2: true, intakesV3: true } });
+  if (profile?.migrations?.intakesV4) return;
+  console.log('[migration] démarrage intakesV4...');
+  await shiftMigratedIntakesByOneDay();
+  await saveUserProfile({ migrations: { ...(profile?.migrations || {}), intakesV4: true } });
 }
 
-// Permet de forcer la migration depuis la console : window.__forceIntakesMigration()
+// Outils manuels pour la console
 if (typeof window !== 'undefined') {
-  window.__forceIntakesMigration = async () => {
-    console.log('[migration] FORCE — exécution sans flag');
-    return runMigration();
-  };
+  window.__forceShiftIntakes = shiftMigratedIntakesByOneDay;
 }
