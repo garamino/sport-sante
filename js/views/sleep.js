@@ -1,6 +1,8 @@
 import { today, formatDateShort, formatDateFR, addDays, computeHoursSlept, showToast } from '../utils.js';
-import { getSleep, saveSleep, getRecentSleep, getAllSleep } from '../db.js';
-import { resolveMeds, stripMedsFromNote } from '../sleep-meds.js';
+import { getSleep, saveSleep, getRecentSleep, getAllSleep, getIntakes, getAllIntakes } from '../db.js';
+import { stripMedsFromNote } from '../sleep-meds.js';
+
+const fmtQty = q => q === '1/2' ? '½' : q === '1/4' ? '¼' : q;
 
 let currentDate = null;
 
@@ -9,18 +11,23 @@ export async function render(container, resetDate = true) {
   container.innerHTML = '<div class="spinner"></div>';
 
   try {
-    const [existing, recent] = await Promise.all([
+    const prevDate = addDays(currentDate, -1);
+    const [existing, recent, prevIntakes] = await Promise.all([
       getSleep(currentDate).catch(() => null),
       getRecentSleep(7).catch(() => []),
+      getIntakes(prevDate).catch(() => null),
     ]);
 
-    const meds = resolveMeds(existing);
+    const prevEntries = (prevIntakes?.entries || []).slice().sort((a, b) => (a.time || '').localeCompare(b.time || ''));
 
     container.innerHTML = `
-      <div class="date-nav">
-        <button id="sleep-prev">‹</button>
-        <span class="current-date">${formatDateFR(currentDate)}</span>
-        <button id="sleep-next">›</button>
+      <div class="date-nav-row">
+        <div class="date-nav" style="margin-bottom:0">
+          <button id="sleep-prev">‹</button>
+          <span class="current-date">${formatDateFR(currentDate)}</span>
+          <button id="sleep-next">›</button>
+        </div>
+        <button class="btn-icon" id="export-sleep" title="Exporter (TSV)">⤓</button>
       </div>
 
       <div class="card">
@@ -43,35 +50,30 @@ export async function render(container, resetDate = true) {
           <div class="quality-display" id="quality-display">${existing?.quality || 5}</div>
         </div>
         <div class="form-group">
-          <label>Metasleep</label>
-          <select id="sleep-metasleep">
-            <option value=""${meds.metasleep === '' ? ' selected' : ''}>—</option>
-            <option value="1/2"${meds.metasleep === '1/2' ? ' selected' : ''}>1/2</option>
-            <option value="1"${meds.metasleep === '1' ? ' selected' : ''}>1</option>
-          </select>
-        </div>
-        <div class="form-group">
-          <label>Trazodone</label>
-          <select id="sleep-trazodone">
-            <option value=""${meds.trazodone === '' ? ' selected' : ''}>—</option>
-            <option value="1/4"${meds.trazodone === '1/4' ? ' selected' : ''}>1/4</option>
-            <option value="1/2"${meds.trazodone === '1/2' ? ' selected' : ''}>1/2</option>
-          </select>
-        </div>
-        <div class="form-group">
-          <label>Stilnoct</label>
-          <select id="sleep-stilnoct">
-            <option value=""${meds.stilnoct === '' ? ' selected' : ''}>—</option>
-            <option value="1/2"${meds.stilnoct === '1/2' ? ' selected' : ''}>1/2</option>
-          </select>
-        </div>
-        <div class="form-group">
           <label>Note</label>
           <textarea id="sleep-note" placeholder="Comment s'est passée ta nuit ?">${existing?.note || ''}</textarea>
         </div>
 
         <button class="btn btn-success" id="save-sleep">Enregistrer</button>
-        <button class="btn" id="export-sleep" style="margin-top:8px;width:100%">Exporter (TSV)</button>
+      </div>
+
+      <div class="card">
+        <div class="section-title" style="margin-top:0">Prises de la veille — ${formatDateShort(prevDate)}</div>
+        ${prevEntries.length === 0 ? `
+          <div style="color:var(--text-secondary);font-size:13px">Aucune prise enregistrée.</div>
+        ` : `
+          <div>
+            ${prevEntries.map(e => `
+              <div class="sleep-history-item">
+                <div>
+                  <div style="font-weight:600">${e.product}</div>
+                  <div style="font-size:12px;color:var(--text-secondary)">${fmtQty(e.quantity)}${e.time ? ' · ' + e.time : ''}</div>
+                </div>
+              </div>
+            `).join('')}
+          </div>
+        `}
+        <a href="#/intakes" class="btn" style="margin-top:8px;display:block;text-align:center;text-decoration:none">Gérer mes prises</a>
       </div>
 
       ${recent.length > 0 ? `
@@ -119,17 +121,23 @@ export async function render(container, resetDate = true) {
       display.textContent = slider.value;
     });
 
-    // Export TSV
+    // Export TSV (toutes les nuits + prises de la veille)
     document.getElementById('export-sleep').addEventListener('click', async (e) => {
       const btn = e.target;
       btn.disabled = true;
-      btn.textContent = 'Export...';
+      const oldLabel = btn.textContent;
+      btn.textContent = '…';
       try {
-        const all = await getAllSleep();
-        const header = ['Date', 'Qualité', 'Coucher', 'Réveil', 'Heures dormies', 'Metasleep', 'Trazodone', 'Stilnoct', 'Note'];
-        const fmtDose = v => v === '1/2' ? '½' : v === '1/4' ? '¼' : v;
+        const [all, allIntakes] = await Promise.all([getAllSleep(), getAllIntakes()]);
+        const intakesByDate = new Map();
+        for (const doc of allIntakes) {
+          intakesByDate.set(doc.date, (doc.entries || []).slice().sort((a, b) => (a.time || '').localeCompare(b.time || '')));
+        }
+        const formatIntakes = entries => (entries || []).map(en => `${en.time ? en.time + ' ' : ''}${en.product} ${fmtQty(en.quantity)}`).join(' ; ');
+
+        const header = ['Date', 'Qualité', 'Coucher', 'Réveil', 'Heures dormies', 'Prises de la veille', 'Note'];
         const rows = all.map(s => {
-          const m = resolveMeds(s);
+          const prev = addDays(s.date, -1);
           const cleanNote = stripMedsFromNote(s.note || '').replace(/[\t\r\n]+/g, ' ');
           return [
             s.date || '',
@@ -137,9 +145,7 @@ export async function render(container, resetDate = true) {
             s.bedtime || '',
             s.wakeTime || '',
             s.hoursSleptHHMM || (s.hoursSlept ? String(s.hoursSlept).replace('.', ',') : ''),
-            fmtDose(m.metasleep),
-            fmtDose(m.trazodone),
-            fmtDose(m.stilnoct),
+            formatIntakes(intakesByDate.get(prev)),
             cleanNote,
           ].join('\t');
         });
@@ -149,7 +155,6 @@ export async function render(container, resetDate = true) {
           await navigator.clipboard.writeText(tsv);
           copied = true;
         } catch {
-          // Fallback 1 : execCommand sur textarea temporaire
           const ta = document.createElement('textarea');
           ta.value = tsv;
           ta.style.position = 'fixed';
@@ -162,7 +167,6 @@ export async function render(container, resetDate = true) {
         if (copied) {
           showToast(`${all.length} nuits copiées ✓`);
         } else {
-          // Fallback 2 : téléchargement
           const blob = new Blob([tsv], { type: 'text/tab-separated-values;charset=utf-8' });
           const url = URL.createObjectURL(blob);
           const a = document.createElement('a');
@@ -178,7 +182,7 @@ export async function render(container, resetDate = true) {
         showToast('Erreur export — ' + err.message);
       } finally {
         btn.disabled = false;
-        btn.textContent = 'Exporter (TSV)';
+        btn.textContent = oldLabel;
       }
     });
 
@@ -207,11 +211,6 @@ export async function render(container, resetDate = true) {
         hoursSleptHHMM: hhmm,
         quality: parseInt(slider.value),
         note: document.getElementById('sleep-note').value,
-        meds: {
-          metasleep: document.getElementById('sleep-metasleep').value,
-          trazodone: document.getElementById('sleep-trazodone').value,
-          stilnoct:  document.getElementById('sleep-stilnoct').value,
-        },
       };
 
       try {

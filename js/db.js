@@ -7,6 +7,7 @@ import {
   addDoc,
   deleteDoc,
   updateDoc,
+  deleteField,
   collection,
   query,
   orderBy,
@@ -97,6 +98,27 @@ export async function getAllSleep() {
   const q = query(userCollection('sleep'), orderBy('date', 'asc'));
   const snap = await getDocs(q);
   return snap.docs.map(d => d.data());
+}
+
+// === Intakes (médicaments / compléments) ===
+export async function getIntakes(date) {
+  const snap = await getDoc(userDoc(`intakes/${date}`));
+  return snap.exists() ? snap.data() : null;
+}
+
+export async function saveIntakes(date, entries) {
+  await setDoc(userDoc(`intakes/${date}`), { entries, date, savedAt: Timestamp.now() });
+}
+
+export async function getAllIntakes() {
+  const q = query(userCollection('intakes'), orderBy('date', 'asc'));
+  const snap = await getDocs(q);
+  return snap.docs.map(d => d.data());
+}
+
+// Suppression du champ legacy `meds` sur un doc sleep
+export async function deleteSleepMedsField(date) {
+  await updateDoc(userDoc(`sleep/${date}`), { meds: deleteField() });
 }
 
 // === Weekly ===
