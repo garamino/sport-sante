@@ -127,6 +127,7 @@ export async function render(container, resetDate = true) {
       try {
         const all = await getAllSleep();
         const header = ['Date', 'Qualité', 'Coucher', 'Réveil', 'Heures dormies', 'Metasleep', 'Trazodone', 'Stilnoct', 'Note'];
+        const fmtDose = v => v === '1/2' ? '½' : v === '1/4' ? '¼' : v;
         const rows = all.map(s => {
           const m = resolveMeds(s);
           const cleanNote = stripMedsFromNote(s.note || '').replace(/[\t\r\n]+/g, ' ');
@@ -136,9 +137,9 @@ export async function render(container, resetDate = true) {
             s.bedtime || '',
             s.wakeTime || '',
             s.hoursSleptHHMM || (s.hoursSlept ? String(s.hoursSlept).replace('.', ',') : ''),
-            m.metasleep,
-            m.trazodone,
-            m.stilnoct,
+            fmtDose(m.metasleep),
+            fmtDose(m.trazodone),
+            fmtDose(m.stilnoct),
             cleanNote,
           ].join('\t');
         });
