@@ -7,8 +7,8 @@ export async function render(container) {
   container.innerHTML = `
     <div class="section-title">Statistiques</div>
     <div class="chart-tabs">
-      <button class="chart-tab active" data-chart="weight">Poids</button>
-      <button class="chart-tab" data-chart="sleep">Sommeil</button>
+      <button class="chart-tab" data-chart="weight">Poids</button>
+      <button class="chart-tab active" data-chart="sleep">Sommeil</button>
       <button class="chart-tab" data-chart="bike">Vélo</button>
     </div>
     <div id="chart-area"></div>
@@ -28,7 +28,7 @@ export async function render(container) {
     });
   });
 
-  await renderChart('weight');
+  await renderChart('sleep');
 }
 
 async function renderChart(type) {
