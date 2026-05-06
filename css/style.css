@@ -658,6 +658,88 @@ textarea {
   border-color: var(--accent);
 }
 
+/* ===== Sleep Meds Section ===== */
+.product-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 12px;
+  justify-content: center;
+}
+
+.product-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 10px;
+  font-size: 11px;
+  font-weight: 600;
+  border: 1px solid var(--border);
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  border-radius: 14px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.product-chip.active {
+  background: var(--bg-card);
+  color: var(--text-primary);
+  border-color: var(--chip, var(--accent));
+}
+
+.chip-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+.meds-correlation {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+
+.meds-corr-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 8px 10px;
+}
+
+.meds-corr-name {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin-bottom: 4px;
+}
+
+.meds-corr-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.meds-corr-row b {
+  color: var(--text-primary);
+}
+
+.meds-corr-n {
+  font-size: 10px;
+  opacity: 0.7;
+}
+
+.meds-corr-delta {
+  margin-left: auto;
+  font-weight: 700;
+  font-size: 13px;
+}
+
 /* ===== Formula Box ===== */
 .formula-box {
   margin-top: 10px;
