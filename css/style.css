@@ -740,6 +740,59 @@ textarea {
   font-size: 13px;
 }
 
+/* ===== Moon Phase ===== */
+.moon-icons-row {
+  display: flex;
+  justify-content: space-around;
+  padding: 6px 0 4px;
+  overflow: hidden;
+}
+
+.moon-icon-cell {
+  flex: 1;
+  text-align: center;
+  font-size: 13px;
+  cursor: default;
+}
+
+.moon-phase-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.moon-phase-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px 8px;
+  text-align: center;
+}
+
+.moon-phase-icon {
+  font-size: 28px;
+  line-height: 1;
+}
+
+.moon-phase-name {
+  font-size: 10px;
+  color: var(--text-secondary);
+  margin: 5px 0 2px;
+  line-height: 1.2;
+}
+
+.moon-phase-score {
+  font-size: 20px;
+  font-weight: 700;
+}
+
+.moon-phase-n {
+  font-size: 10px;
+  color: var(--text-secondary);
+  margin-top: 2px;
+}
+
 /* ===== Formula Box ===== */
 .formula-box {
   margin-top: 10px;

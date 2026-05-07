@@ -20,6 +20,38 @@ const PRODUCT_COLORS = {
   'D-Pearls 38 microgr':  '#ffee58',
 };
 
+const MOON_PHASES = [
+  { icon: '🌑', label: 'Nouvelle lune' },
+  { icon: '🌒', label: 'Croissant ↑' },
+  { icon: '🌓', label: 'Premier quartier' },
+  { icon: '🌔', label: 'Gibbeuse ↑' },
+  { icon: '🌕', label: 'Pleine lune' },
+  { icon: '🌖', label: 'Gibbeuse ↓' },
+  { icon: '🌗', label: 'Dernier quartier' },
+  { icon: '🌘', label: 'Décroissant ↓' },
+];
+
+// Algorithme astronomique simplifié — précision ±1 jour, suffisant pour détecter des tendances.
+// Référence : nouvelle lune du 6 janvier 2000. Période synodique : 29.530588853 j.
+function getMoonPhase(dateStr) {
+  const [y, m, d] = dateStr.split('-').map(Number);
+  const ref = new Date(2000, 0, 6);
+  const dt  = new Date(y, m - 1, d);
+  const daysSince = (dt - ref) / 86400000;
+  const cycle = 29.530588853;
+  const pos = ((daysSince % cycle) + cycle) % cycle;
+  let idx;
+  if (pos < 1.85)       idx = 0;
+  else if (pos < 7.38)  idx = 1;
+  else if (pos < 11.07) idx = 2;
+  else if (pos < 14.77) idx = 3;
+  else if (pos < 16.62) idx = 4;
+  else if (pos < 22.15) idx = 5;
+  else if (pos < 25.84) idx = 6;
+  else                  idx = 7;
+  return { ...MOON_PHASES[idx], phaseIdx: idx };
+}
+
 function qtyToNumber(q) {
   if (q === '1/2') return 0.5;
   if (q === '1/4') return 0.25;
@@ -166,11 +198,13 @@ async function renderChart(type) {
     } else if (type === 'sleep') {
       area.innerHTML = `
         <div class="chart-container"><canvas id="main-chart"></canvas></div>
+        <div id="moon-icons-row" class="moon-icons-row"></div>
         <div id="chart-empty" class="empty-state hidden">
           <p>Pas encore de données</p>
           <p style="font-size:13px;color:var(--text-secondary)">Commence à logger tes séances !</p>
         </div>
         <div id="sleep-meds-section" style="margin-top:24px"></div>
+        <div id="moon-section" style="margin-top:24px"></div>
       `;
       const canvas = document.getElementById('main-chart');
       const emptyEl = document.getElementById('chart-empty');
@@ -215,7 +249,9 @@ async function renderChart(type) {
         });
       }
 
+      renderMoonIconsRow(data);
       renderSleepMedsSection(sleepData, intakesData, chartColors, baseOptions);
+      renderMoonSection(data);
 
     } else if (type === 'bike') {
       const workouts = await getAllWorkouts();
@@ -932,6 +968,49 @@ function renderMedsChart(periodSleep, nightMap, colors, baseOptions) {
       },
     },
   });
+}
+
+function renderMoonIconsRow(data) {
+  const row = document.getElementById('moon-icons-row');
+  if (!row || data.length === 0) return;
+  row.innerHTML = data.map(s => {
+    const { icon, label } = getMoonPhase(s.date);
+    return `<span class="moon-icon-cell" title="${label}">${icon}</span>`;
+  }).join('');
+}
+
+function renderMoonSection(data) {
+  const section = document.getElementById('moon-section');
+  if (!section) return;
+  if (data.length === 0) { section.innerHTML = ''; return; }
+
+  const stats = MOON_PHASES.map((p, idx) => {
+    const nights = data.filter(s => getMoonPhase(s.date).phaseIdx === idx);
+    const avg = nights.length
+      ? +(nights.reduce((sum, s) => sum + s.quality, 0) / nights.length).toFixed(1)
+      : null;
+    return { ...p, avg, n: nights.length };
+  });
+
+  const cards = stats.map(p => {
+    const scoreColor = p.avg === null ? 'var(--text-secondary)'
+      : p.avg >= 7 ? '#66bb6a'
+      : p.avg >= 4 ? '#ffa726'
+      : '#ef5350';
+    return `
+      <div class="moon-phase-card">
+        <div class="moon-phase-icon">${p.icon}</div>
+        <div class="moon-phase-name">${p.label}</div>
+        <div class="moon-phase-score" style="color:${scoreColor}">${p.avg ?? '—'}</div>
+        <div class="moon-phase-n">${p.n} nuit${p.n !== 1 ? 's' : ''}</div>
+      </div>
+    `;
+  }).join('');
+
+  section.innerHTML = `
+    <div class="section-title">Lune &amp; qualité du sommeil</div>
+    <div class="moon-phase-grid">${cards}</div>
+  `;
 }
 
 function loadScript(src) {
