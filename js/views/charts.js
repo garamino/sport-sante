@@ -973,12 +973,21 @@ function renderMedsChart(periodSleep, nightMap, colors, baseOptions) {
 function renderMoonIconsRow(data) {
   const row = document.getElementById('moon-icons-row');
   if (!row || data.length === 0) return;
+
+  // N'affiche que les 4 phases clés au premier jour de chaque phase
+  const KEY_PHASES = new Set([0, 2, 4, 6]); // 🌑 🌓 🌕 🌗
+  let prevPhaseIdx = null;
+
   row.innerHTML = data.map(s => {
-    const { icon, label } = getMoonPhase(s.date);
-    return `<span class="moon-icon-cell" title="${label}">${icon}</span>`;
+    const { icon, label, phaseIdx } = getMoonPhase(s.date);
+    const show = KEY_PHASES.has(phaseIdx) && phaseIdx !== prevPhaseIdx;
+    prevPhaseIdx = phaseIdx;
+    return show
+      ? `<span class="moon-icon-cell" title="${label}">${icon}</span>`
+      : `<span class="moon-icon-cell"></span>`;
   }).join('');
 
-  // Aligne les icônes avec la zone de plot Chart.js (exclut les marges des axes)
+  // Aligne avec la zone de plot Chart.js (exclut les marges des axes)
   requestAnimationFrame(() => {
     if (chartInstance?.chartArea) {
       const ca = chartInstance.chartArea;
