@@ -977,6 +977,16 @@ function renderMoonIconsRow(data) {
     const { icon, label } = getMoonPhase(s.date);
     return `<span class="moon-icon-cell" title="${label}">${icon}</span>`;
   }).join('');
+
+  // Aligne les icônes avec la zone de plot Chart.js (exclut les marges des axes)
+  requestAnimationFrame(() => {
+    if (chartInstance?.chartArea) {
+      const ca = chartInstance.chartArea;
+      const totalWidth = chartInstance.canvas.offsetWidth;
+      row.style.paddingLeft  = ca.left + 'px';
+      row.style.paddingRight = (totalWidth - ca.right) + 'px';
+    }
+  });
 }
 
 function renderMoonSection(data) {
