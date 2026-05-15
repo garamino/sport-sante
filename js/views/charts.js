@@ -8,6 +8,7 @@ const SLEEP_PRODUCTS = [
   'Ashwagandha 300mg',
   'L-Théanine 200mg',
   'D-Pearls 38 microgr',
+  'Forténight',
 ];
 
 const PRODUCT_COLORS = {
@@ -18,6 +19,7 @@ const PRODUCT_COLORS = {
   'Ashwagandha 300mg':    '#66bb6a',
   'L-Théanine 200mg':     '#26a69a',
   'D-Pearls 38 microgr':  '#ffee58',
+  'Forténight':           '#1e88e5',
 };
 
 const MOON_PHASES = [

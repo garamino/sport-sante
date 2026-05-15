@@ -9,6 +9,7 @@ const PRODUCTS = [
   'Ashwagandha 300mg',
   'L-Théanine 200mg',
   'D-Pearls 38 microgr',
+  'Forténight',
 ];
 
 const QUANTITIES = ['1', '1/2', '1/4'];
