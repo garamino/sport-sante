@@ -298,10 +298,12 @@ async function renderChart(type) {
 
 let currentPeriod = '3m';
 
+const PERIOD_LABELS = { '1m': '1 mois', '3m': '3 mois', '6m': '6 mois', 'all': 'Tout' };
+
 function filterByPeriod(data, period) {
   if (period === 'all') return data;
+  const months = { '1m': 1, '3m': 3, '6m': 6 }[period] ?? 3;
   const now = new Date();
-  const months = period === '3m' ? 3 : 6;
   const cutoff = new Date(now.getFullYear(), now.getMonth() - months, now.getDate());
   const cutoffStr = cutoff.toISOString().slice(0, 10);
   return data.filter(w => w.date >= cutoffStr);
@@ -310,8 +312,8 @@ function filterByPeriod(data, period) {
 function renderPeriodButtons(container, bikeData, colors, baseOptions, sub) {
   const wrapper = document.createElement('div');
   wrapper.className = 'period-buttons';
-  wrapper.innerHTML = ['3m', '6m', 'all'].map(p =>
-    `<button class="period-btn ${p === currentPeriod ? 'active' : ''}" data-period="${p}">${p === 'all' ? 'Tout' : p === '3m' ? '3 mois' : '6 mois'}</button>`
+  wrapper.innerHTML = ['1m', '3m', '6m', 'all'].map(p =>
+    `<button class="period-btn ${p === currentPeriod ? 'active' : ''}" data-period="${p}">${PERIOD_LABELS[p]}</button>`
   ).join('');
   container.prepend(wrapper);
 
@@ -330,13 +332,16 @@ function renderBikeSubChart(sub, bikeData, colors, baseOptions) {
   const container = document.getElementById('bike-chart-area');
   if (!container) return;
 
+  const filtered = filterByPeriod(bikeData, currentPeriod);
+
   if (sub === 'intensite') {
-    renderIntensiteChart(container, bikeData, colors, baseOptions);
+    renderIntensiteChart(container, filtered, colors, baseOptions);
+    renderPeriodButtons(container, bikeData, colors, baseOptions, sub);
   } else if (sub === 'performance') {
-    renderPerformanceChart(container, filterByPeriod(bikeData, currentPeriod), colors);
+    renderPerformanceChart(container, filtered, colors);
     renderPeriodButtons(container, bikeData, colors, baseOptions, sub);
   } else {
-    renderEfficaciteChart(container, filterByPeriod(bikeData, currentPeriod), colors, baseOptions);
+    renderEfficaciteChart(container, filtered, colors, baseOptions);
     renderPeriodButtons(container, bikeData, colors, baseOptions, sub);
   }
 }
