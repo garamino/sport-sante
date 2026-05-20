@@ -13,7 +13,9 @@ import * as weeklyView from './views/weekly.js';
 import * as chartsView from './views/charts.js';
 import * as healthView from './views/health.js';
 import * as intakesView from './views/intakes.js';
+import * as libraryView from './views/library.js';
 import { migrateMedsToIntakes } from './migrations.js';
+import { seedLibrary } from './migrations/seed-library.js';
 
 // Register routes
 registerRoute('/login', loginView);
@@ -24,6 +26,7 @@ registerRoute('/weekly', weeklyView);
 registerRoute('/charts', chartsView);
 registerRoute('/health', healthView);
 registerRoute('/intakes', intakesView);
+registerRoute('/library', libraryView);
 
 const appContainer = document.getElementById('app');
 const header = document.getElementById('app-header');
@@ -39,6 +42,7 @@ onAuth(async (user) => {
     bottomNav.classList.remove('hidden');
     await updateHeader();
     migrateMedsToIntakes().catch(err => console.warn('Migration intakesV1 a échoué :', err));
+    seedLibrary().catch(err => console.warn('Seed library a échoué :', err));
     initRouter(appContainer);
     if (window.location.hash === '#/login' || !window.location.hash) {
       navigateTo('/dashboard');

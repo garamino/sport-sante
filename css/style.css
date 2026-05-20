@@ -1621,6 +1621,163 @@ textarea {
 .session-picker-icon { font-size: 18px; }
 .session-picker-label { flex: 1; text-align: left; }
 
+/* ===== Library (Biblio) ===== */
+.library-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 0 12px;
+}
+.library-title {
+  font-size: 18px;
+  font-weight: 700;
+}
+.library-count {
+  background: var(--bg-card);
+  color: var(--text-secondary);
+  font-size: 12px;
+  padding: 2px 8px;
+  border-radius: 20px;
+}
+.library-tabs {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 16px;
+  background: var(--bg-card);
+  border-radius: var(--radius-sm);
+  padding: 4px;
+}
+.library-tab {
+  flex: 1;
+  padding: 8px;
+  border: none;
+  border-radius: 6px;
+  background: none;
+  color: var(--text-secondary);
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.library-tab.active {
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+}
+.library-group {
+  margin-bottom: 16px;
+}
+.library-group-title {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  color: var(--accent);
+  margin-bottom: 6px;
+  padding: 0 2px;
+}
+.exercise-list-item {
+  background: var(--bg-card);
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+  margin-bottom: 6px;
+}
+.exercise-list-name {
+  font-size: 14px;
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+.exercise-list-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-bottom: 2px;
+}
+.exercise-list-notes {
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin-top: 2px;
+}
+
+/* Session templates */
+.session-template-card {
+  background: var(--bg-card);
+  border-radius: var(--radius);
+  margin-bottom: 12px;
+  overflow: hidden;
+}
+.session-template-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--border);
+}
+.session-template-icon { font-size: 18px; }
+.session-template-name { flex: 1; font-weight: 600; font-size: 15px; }
+.session-template-count { font-size: 12px; color: var(--text-secondary); }
+.session-template-exercises { padding: 8px 0; }
+.session-exercise-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 14px;
+}
+.session-exercise-num {
+  width: 20px;
+  height: 20px;
+  background: var(--bg-secondary);
+  border-radius: 50%;
+  font-size: 11px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  color: var(--text-secondary);
+}
+.session-exercise-name { flex: 1; font-size: 13px; }
+.session-exercise-sets { font-size: 12px; color: var(--text-secondary); }
+
+/* Empty day */
+.empty-day-card {
+  background: var(--bg-card);
+  border-radius: var(--radius);
+  padding: 32px 16px;
+  text-align: center;
+  margin-top: 8px;
+}
+.empty-day-icon { font-size: 40px; margin-bottom: 12px; }
+.empty-day-label { font-size: 16px; font-weight: 600; }
+
+/* Session picker overlay (bottom sheet) */
+.session-picker-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.6);
+  z-index: 200;
+  display: flex;
+  align-items: flex-end;
+}
+.session-picker-overlay.hidden { display: none; }
+.session-picker-sheet {
+  background: var(--bg-secondary);
+  border-radius: var(--radius) var(--radius) 0 0;
+  width: 100%;
+  padding: 16px 16px 32px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 70vh;
+  overflow-y: auto;
+}
+.session-picker-sheet-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 15px;
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+
 /* ===== Scrollbar ===== */
 ::-webkit-scrollbar { width: 4px; }
 ::-webkit-scrollbar-track { background: var(--bg-primary); }

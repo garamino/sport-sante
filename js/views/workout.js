@@ -1,6 +1,5 @@
-import { today, getDayOfWeek, getWeekNumber, getPhase, formatDateFR, addDays, showToast } from '../utils.js';
-import { getUserProfile, getWorkout, saveWorkout, getExerciseHistory } from '../db.js';
-import { getExercisesForDay, getDaySchedule, WEEKLY_SCHEDULE } from '../program-data.js';
+import { today, formatDateFR, addDays, showToast } from '../utils.js';
+import { getWorkout, saveWorkout, getExerciseHistory, getWorkoutTemplates, getWorkoutTemplate, getExercise } from '../db.js';
 import { EXERCISE_GUIDE, openExerciseGuide } from '../exercise-guide.js';
 
 let currentDate = null;
@@ -10,33 +9,7 @@ export async function render(container, resetDate = true) {
   container.innerHTML = '<div class="spinner"></div>';
 
   try {
-    const profile = await getUserProfile();
-    const naturalDayOfWeek = getDayOfWeek(currentDate);
-    const weekNum = profile?.startDate ? getWeekNumber(profile.startDate, currentDate) : 1;
-    const phase = getPhase(weekNum);
-
-    // Load existing data for this date
     const existing = await getWorkout(currentDate);
-
-    // Support session override (moved from another day)
-    const effectiveDayOfWeek = existing?.overrideDayOfWeek || naturalDayOfWeek;
-    const schedule = getDaySchedule(effectiveDayOfWeek);
-    const exercises = getExercisesForDay(effectiveDayOfWeek, phase);
-    const isOverridden = effectiveDayOfWeek !== naturalDayOfWeek;
-
-    // Check if an extra activity was added (or existed in DB)
-    const hasExtraVelo = existing?.extraActivities?.includes('velo');
-
-    // Separate done/not-done exercises for ordering
-    const doneExercises = [];
-    const todoExercises = [];
-    if (schedule.type === 'muscu') {
-      exercises.forEach((ex, i) => {
-        const saved = existing?.exercises?.find(e => e.id === ex.id);
-        if (saved?.done) doneExercises.push(i);
-        else todoExercises.push(i);
-      });
-    }
 
     container.innerHTML = `
       <div class="date-nav">
@@ -51,70 +24,7 @@ export async function render(container, resetDate = true) {
         </button>
       </div>
 
-      <div class="card" style="text-align:center;padding:10px">
-        <strong>${schedule.icon} ${schedule.label}</strong>
-        <span style="font-size:12px;color:var(--text-secondary);margin-left:8px">${phase} · S${weekNum}</span>
-        ${isOverridden ? `<div style="font-size:11px;color:var(--warning);margin-top:4px">Séance déplacée (initialement : ${getDaySchedule(naturalDayOfWeek).label})</div>` : ''}
-      </div>
-
-      <div class="session-override-area">
-        <button class="btn btn-small session-override-btn" id="change-session-btn">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M1 4v6h6"/><path d="M23 20v-6h-6"/><path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 0 1 3.51 15"/></svg>
-          Changer la séance
-        </button>
-        <div class="session-picker hidden" id="session-picker">
-          ${Object.entries(WEEKLY_SCHEDULE).map(([day, s]) => `
-            <button class="session-picker-option ${parseInt(day) === effectiveDayOfWeek ? 'active' : ''}" data-day="${day}">
-              <span class="session-picker-icon">${s.icon}</span>
-              <span class="session-picker-label">${s.label}</span>
-            </button>
-          `).join('')}
-        </div>
-      </div>
-
-      ${existing?.skipped ? `
-        <div class="skipped-banner">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
-          Séance non faite
-        </div>
-      ` : ''}
-
-      ${schedule.type === 'muscu' ? renderMuscu(exercises, existing, doneExercises, todoExercises) : ''}
-      ${schedule.type === 'velo' ? renderVelo(existing) : ''}
-      ${schedule.type === 'rest' ? renderRest() : ''}
-
-      ${/* Extra vélo section (on non-vélo days) */
-        schedule.type !== 'velo' && hasExtraVelo ? `
-        <div id="extra-velo-section">
-          <div style="display:flex;align-items:center;justify-content:space-between;margin-top:16px;margin-bottom:4px">
-            <span class="card-title" style="margin:0">Activité ajoutée</span>
-            <button class="btn btn-small" id="remove-extra-velo" style="color:var(--danger);background:none;border:1px solid var(--danger);padding:4px 10px;font-size:12px">
-              ✕ Retirer vélo
-            </button>
-          </div>
-          ${renderVelo(existing)}
-        </div>
-      ` : ''}
-
-      ${/* Add activity button (when no vélo scheduled AND no extra vélo yet) */
-        schedule.type !== 'velo' && !hasExtraVelo ? `
-        <div id="add-activity-area" style="margin-top:16px">
-          <button class="btn btn-secondary" id="add-activity-btn" style="gap:6px">
-            <span style="font-size:18px">+</span> Ajouter une activité
-          </button>
-        </div>
-      ` : ''}
-
-      <div style="display:flex;gap:8px;margin-top:12px">
-        ${schedule.type !== 'rest' ? `
-          <button class="btn btn-small" id="skip-workout" style="background:none;border:1px solid var(--danger);color:var(--danger);flex-shrink:0">
-            Séance non faite
-          </button>
-        ` : ''}
-        <button class="btn btn-success" id="save-workout" style="flex:1">
-          Enregistrer
-        </button>
-      </div>
+      <div id="workout-body"></div>
     `;
 
     // Date navigation
@@ -127,206 +37,323 @@ export async function render(container, resetDate = true) {
       render(container, false);
     });
 
-    // Calendar picker
     const datePicker = document.getElementById('date-picker');
-    const calendarBtn = document.getElementById('open-calendar');
-    calendarBtn.addEventListener('click', () => {
-      datePicker.showPicker();
-    });
+    document.getElementById('open-calendar').addEventListener('click', () => datePicker.showPicker());
     datePicker.addEventListener('change', () => {
-      if (datePicker.value) {
-        currentDate = datePicker.value;
-        render(container, false);
-      }
+      if (datePicker.value) { currentDate = datePicker.value; render(container, false); }
     });
 
-    // Session override picker
-    const changeSessionBtn = document.getElementById('change-session-btn');
-    const sessionPicker = document.getElementById('session-picker');
-    changeSessionBtn.addEventListener('click', () => {
-      sessionPicker.classList.toggle('hidden');
-    });
-    sessionPicker.querySelectorAll('.session-picker-option').forEach(btn => {
-      btn.addEventListener('click', async () => {
-        const newDay = parseInt(btn.dataset.day);
-        const overrideData = { overrideDayOfWeek: newDay === naturalDayOfWeek ? null : newDay };
-        await saveWorkout(currentDate, { ...existing || {}, ...overrideData });
-        render(container, false);
-      });
-    });
-
-    // Add activity button
-    const addBtn = document.getElementById('add-activity-btn');
-    if (addBtn) {
-      addBtn.addEventListener('click', () => {
-        addBtn.parentElement.innerHTML = `
-          <div class="card" style="text-align:center">
-            <p style="font-size:13px;color:var(--text-secondary);margin-bottom:10px">Quelle activité ajouter ?</p>
-            <button class="btn btn-primary btn-small" id="add-velo-btn" style="width:auto;margin:0 auto">
-              🚴 Vélo
-            </button>
-          </div>
-        `;
-        document.getElementById('add-velo-btn').addEventListener('click', () => {
-          // Re-render with extra vélo flag stored temporarily
-          saveWorkout(currentDate, {
-            ...buildSaveData(schedule, exercises, weekNum, phase, existing),
-            extraActivities: ['velo'],
-          }).then(() => render(container, false));
-        });
-      });
-    }
-
-    // Remove extra vélo
-    const removeBtn = document.getElementById('remove-extra-velo');
-    if (removeBtn) {
-      removeBtn.addEventListener('click', async () => {
-        const data = buildSaveData(schedule, exercises, weekNum, phase, existing);
-        data.extraActivities = [];
-        data.bikeData = null;
-        await saveWorkout(currentDate, data);
-        render(container, false);
-      });
-    }
-
-    // Exercise guide buttons
-    container.querySelectorAll('.exercise-guide-btn').forEach(btn => {
-      btn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        openExerciseGuide(btn.dataset.exerciseId);
-      });
-    });
-
-    // Exercise history buttons
-    container.querySelectorAll('.exercise-history-btn').forEach(btn => {
-      btn.addEventListener('click', async (e) => {
-        e.stopPropagation();
-        const exId = btn.dataset.exerciseId;
-        const exName = btn.dataset.exerciseName;
-        openExerciseHistory(exId, exName, currentDate);
-      });
-    });
-
-    // Skip workout
-    const skipBtn = document.getElementById('skip-workout');
-    if (skipBtn) {
-      skipBtn.addEventListener('click', async () => {
-        skipBtn.disabled = true;
-        skipBtn.textContent = 'Enregistrement...';
-
-        const data = {
-          week: weekNum,
-          phase,
-          dayType: schedule.type,
-          muscleGroup: schedule.label,
-          skipped: true,
-          extraActivities: existing?.extraActivities || [],
-          overrideDayOfWeek: existing?.overrideDayOfWeek || null,
-        };
-
-        if (schedule.type === 'muscu') {
-          data.exercises = exercises.map(ex => ({
-            id: ex.id,
-            name: ex.name,
-            sets: ex.sets,
-            reps: ex.reps,
-            done: false,
-            note: '',
-          }));
-        } else if (schedule.type === 'velo') {
-          data.bikeData = null;
-        }
-
-        try {
-          await saveWorkout(currentDate, data);
-          showToast('Séance marquée non faite');
-          render(container, false);
-        } catch {
-          showToast('Erreur — réessaie');
-          skipBtn.disabled = false;
-          skipBtn.textContent = 'Séance non faite';
-        }
-      });
-    }
-
-    // Save
-    const saveBtn = document.getElementById('save-workout');
-    if (saveBtn) {
-      saveBtn.addEventListener('click', async () => {
-        saveBtn.disabled = true;
-        saveBtn.textContent = 'Enregistrement...';
-
-        const data = buildSaveData(schedule, exercises, weekNum, phase, existing);
-
-        // Include extra vélo data if present
-        if (hasExtraVelo || schedule.type === 'velo') {
-          data.bikeData = {
-            fcAvg: parseInt(document.getElementById('bike-fc')?.value) || 0,
-            wattsAvg: parseInt(document.getElementById('bike-watts')?.value) || 0,
-            durationMinutes: parseInt(document.getElementById('bike-duration')?.value) || 0,
-            distanceKm: parseFloat(document.getElementById('bike-distance')?.value) || 0,
-            elevationGain: parseInt(document.getElementById('bike-elevation')?.value) || 0,
-            rpm: parseInt(document.getElementById('bike-rpm')?.value) || 0,
-          };
-          if (hasExtraVelo) data.extraActivities = ['velo'];
-        }
-
-        try {
-          await saveWorkout(currentDate, data);
-          showToast('Séance enregistrée ✓');
-        } catch (err) {
-          showToast('Erreur — réessaie');
-        }
-        saveBtn.disabled = false;
-        saveBtn.textContent = 'Enregistrer';
-      });
-    }
+    await renderWorkoutBody(container.querySelector('#workout-body'), existing);
   } catch (err) {
     container.innerHTML = `<div class="empty-state"><p>Erreur</p><p style="font-size:12px">${err.message}</p></div>`;
   }
 }
 
-function buildSaveData(schedule, exercises, weekNum, phase, existing) {
-  const data = {
-    week: weekNum,
-    phase,
-    dayType: schedule.type,
-    muscleGroup: schedule.label,
-    extraActivities: existing?.extraActivities || [],
-    overrideDayOfWeek: existing?.overrideDayOfWeek || null,
-  };
-
-  if (schedule.type === 'muscu') {
-    data.exercises = exercises.map((ex, i) => ({
-      id: ex.id,
-      name: ex.name,
-      sets: ex.sets,
-      reps: ex.reps,
-      done: document.getElementById(`ex-done-${i}`)?.checked || false,
-      note: document.getElementById(`ex-note-${i}`)?.value || '',
-    }));
-  } else if (schedule.type === 'velo') {
-    data.bikeData = {
-      fcAvg: parseInt(document.getElementById('bike-fc')?.value) || 0,
-      wattsAvg: parseInt(document.getElementById('bike-watts')?.value) || 0,
-      durationMinutes: parseInt(document.getElementById('bike-duration')?.value) || 0,
-      distanceKm: parseFloat(document.getElementById('bike-distance')?.value) || 0,
-      elevationGain: parseInt(document.getElementById('bike-elevation')?.value) || 0,
-      rpm: parseInt(document.getElementById('bike-rpm')?.value) || 0,
-    };
+async function renderWorkoutBody(body, existing) {
+  // If a template is already chosen (saved), render its exercises
+  if (existing?.templateId || existing?.dayType === 'velo') {
+    await renderActiveSession(body, existing);
+  } else {
+    await renderEmptyDay(body, existing);
   }
-
-  return data;
 }
 
-function renderMuscu(exercises, existing, doneExercises, todoExercises) {
-  // Render done exercises first, then todo
-  const orderedIndices = [...doneExercises, ...todoExercises];
+// ── Empty day — no session chosen yet ─────────────────────────────────────────
+
+async function renderEmptyDay(body, existing) {
+  const templates = await getWorkoutTemplates();
+
+  body.innerHTML = `
+    <div class="empty-day-card">
+      <div class="empty-day-icon">🏋️</div>
+      <p class="empty-day-label">Aucune séance planifiée</p>
+      <p style="font-size:13px;color:var(--text-secondary);margin-top:4px;margin-bottom:16px">Choisis une séance pour commencer</p>
+      <button class="btn btn-primary" id="pick-session-btn">Choisir une séance</button>
+    </div>
+
+    <div class="session-picker-overlay hidden" id="session-picker-overlay">
+      <div class="session-picker-sheet">
+        <div class="session-picker-sheet-header">
+          <span>Quelle séance ?</span>
+          <button class="guide-modal-close" id="close-picker">&times;</button>
+        </div>
+        ${templates.map(tpl => `
+          <button class="session-picker-option" data-template-id="${tpl.id}" data-template-type="${tpl.type}">
+            <span class="session-picker-icon">${tpl.icon || '💪'}</span>
+            <span class="session-picker-label">${tpl.name}</span>
+          </button>
+        `).join('')}
+        <button class="session-picker-option" data-template-id="rest" data-template-type="rest">
+          <span class="session-picker-icon">♻️</span>
+          <span class="session-picker-label">Repos complet</span>
+        </button>
+      </div>
+    </div>
+  `;
+
+  document.getElementById('pick-session-btn').addEventListener('click', () => {
+    document.getElementById('session-picker-overlay').classList.remove('hidden');
+  });
+  document.getElementById('close-picker').addEventListener('click', () => {
+    document.getElementById('session-picker-overlay').classList.add('hidden');
+  });
+  document.getElementById('session-picker-overlay').addEventListener('click', (e) => {
+    if (e.target === document.getElementById('session-picker-overlay')) {
+      document.getElementById('session-picker-overlay').classList.add('hidden');
+    }
+  });
+
+  body.querySelectorAll('.session-picker-option').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const templateId = btn.dataset.templateId;
+      const templateType = btn.dataset.templateType;
+      const muscleGroup = btn.querySelector('.session-picker-label')?.textContent?.trim() || '';
+      const data = { ...existing || {}, templateId, dayType: templateType, muscleGroup };
+      await saveWorkout(currentDate, data);
+      await renderActiveSession(body, await getWorkout(currentDate));
+    });
+  });
+}
+
+// ── Active session — template chosen ──────────────────────────────────────────
+
+async function renderActiveSession(body, existing) {
+  const dayType = existing?.dayType || 'muscu';
+
+  if (dayType === 'rest') {
+    renderRestSession(body, existing);
+    return;
+  }
+
+  if (dayType === 'velo') {
+    renderVeloSession(body, existing);
+    return;
+  }
+
+  // Muscu: load template exercises
+  let templateName = '';
+  let templateIcon = '💪';
+  let exercises = [];
+
+  if (existing?.templateId && existing.templateId !== 'rest') {
+    try {
+      const tpl = await getWorkoutTemplate(existing.templateId);
+      if (tpl) {
+        templateName = tpl.name;
+        templateIcon = tpl.icon || '💪';
+        exercises = await Promise.all((tpl.exerciseIds || []).map(id => getExercise(id)));
+        exercises = exercises.filter(Boolean);
+      }
+    } catch {}
+  }
 
   const isSkipped = existing?.skipped;
 
-  return orderedIndices.map(i => {
-    const ex = exercises[i];
+  body.innerHTML = `
+    <div class="card" style="text-align:center;padding:10px;position:relative">
+      <strong>${templateIcon} ${templateName}</strong>
+      <button class="btn btn-small" id="change-session-btn" style="position:absolute;right:10px;top:50%;transform:translateY(-50%);font-size:11px;padding:4px 8px;background:none;border:1px solid var(--border);color:var(--text-secondary)">
+        Changer
+      </button>
+    </div>
+
+    ${isSkipped ? `
+      <div class="skipped-banner">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
+        Séance non faite
+      </div>
+    ` : ''}
+
+    ${renderMuscu(exercises, existing)}
+
+    <div style="display:flex;gap:8px;margin-top:12px">
+      <button class="btn btn-small" id="skip-workout" style="background:none;border:1px solid var(--danger);color:var(--danger);flex-shrink:0">
+        Séance non faite
+      </button>
+      <button class="btn btn-success" id="save-workout" style="flex:1">Enregistrer</button>
+    </div>
+  `;
+
+  // Change session → reset templateId, re-render empty
+  document.getElementById('change-session-btn').addEventListener('click', async () => {
+    const data = { ...existing };
+    delete data.templateId;
+    delete data.dayType;
+    await saveWorkout(currentDate, data);
+    await renderEmptyDay(body, data);
+  });
+
+  // Exercise guide & history buttons
+  body.querySelectorAll('.exercise-guide-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      openExerciseGuide(btn.dataset.exerciseId);
+    });
+  });
+  body.querySelectorAll('.exercise-history-btn').forEach(btn => {
+    btn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      openExerciseHistory(btn.dataset.exerciseId, btn.dataset.exerciseName, currentDate);
+    });
+  });
+
+  // Checkbox → visual done state
+  body.querySelectorAll('.exercise-checkbox').forEach(cb => {
+    cb.addEventListener('change', () => {
+      cb.closest('.exercise-card')?.classList.toggle('done', cb.checked);
+    });
+  });
+
+  // Skip
+  document.getElementById('skip-workout').addEventListener('click', async () => {
+    const btn = document.getElementById('skip-workout');
+    btn.disabled = true;
+    btn.textContent = 'Enregistrement...';
+    try {
+      await saveWorkout(currentDate, {
+        ...existing,
+        skipped: true,
+        exercises: exercises.map(ex => ({ id: ex.id, name: ex.name, done: false, note: '' })),
+      });
+      showToast('Séance marquée non faite');
+      await renderActiveSession(body, await getWorkout(currentDate));
+    } catch {
+      showToast('Erreur — réessaie');
+      btn.disabled = false;
+      btn.textContent = 'Séance non faite';
+    }
+  });
+
+  // Save
+  document.getElementById('save-workout').addEventListener('click', async () => {
+    const btn = document.getElementById('save-workout');
+    btn.disabled = true;
+    btn.textContent = 'Enregistrement...';
+    try {
+      await saveWorkout(currentDate, {
+        ...existing,
+        exercises: exercises.map((ex, i) => ({
+          id: ex.id,
+          name: ex.name,
+          done: body.querySelector(`#ex-done-${i}`)?.checked || false,
+          note: body.querySelector(`#ex-note-${i}`)?.value || '',
+        })),
+      });
+      showToast('Séance enregistrée ✓');
+    } catch {
+      showToast('Erreur — réessaie');
+    }
+    btn.disabled = false;
+    btn.textContent = 'Enregistrer';
+  });
+}
+
+function renderRestSession(body, existing) {
+  body.innerHTML = `
+    <div class="card" style="text-align:center;padding:10px;position:relative">
+      <strong>♻️ Repos complet</strong>
+      <button class="btn btn-small" id="change-session-btn" style="position:absolute;right:10px;top:50%;transform:translateY(-50%);font-size:11px;padding:4px 8px;background:none;border:1px solid var(--border);color:var(--text-secondary)">
+        Changer
+      </button>
+    </div>
+    <div class="empty-state" style="margin-top:16px">
+      <p style="font-size:13px;color:var(--text-secondary)">Étirements, mobilité, sommeil 7-9h</p>
+    </div>
+  `;
+  document.getElementById('change-session-btn').addEventListener('click', async () => {
+    const data = { ...existing };
+    delete data.templateId;
+    delete data.dayType;
+    await saveWorkout(currentDate, data);
+    await renderEmptyDay(body, data);
+  });
+}
+
+function renderVeloSession(body, existing) {
+  const bike = existing?.bikeData || {};
+  const isSkipped = existing?.skipped;
+  body.innerHTML = `
+    <div class="card" style="text-align:center;padding:10px;position:relative">
+      <strong>🚴 Vélo – Cardio endurance</strong>
+      <button class="btn btn-small" id="change-session-btn" style="position:absolute;right:10px;top:50%;transform:translateY(-50%);font-size:11px;padding:4px 8px;background:none;border:1px solid var(--border);color:var(--text-secondary)">
+        Changer
+      </button>
+    </div>
+
+    ${isSkipped ? `<div class="skipped-banner">Séance non faite</div>` : ''}
+
+    <div class="card bike-form ${isSkipped ? 'skipped' : ''}">
+      <div class="card-title">Session vélo</div>
+      <p style="font-size:13px;color:var(--text-secondary);margin-bottom:14px">Intensité modérée · 110-128 bpm</p>
+      <div class="form-row">
+        <div class="form-group"><label>FC moyenne (bpm)</label><input type="number" id="bike-fc" placeholder="120" value="${bike.fcAvg || ''}"></div>
+        <div class="form-group"><label>Watts moyens</label><input type="number" id="bike-watts" placeholder="80" value="${bike.wattsAvg || ''}"></div>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label>Durée (minutes)</label><input type="number" id="bike-duration" placeholder="45" value="${bike.durationMinutes || ''}"></div>
+        <div class="form-group"><label>Distance (km)</label><input type="number" id="bike-distance" step="0.1" placeholder="20" value="${bike.distanceKm || ''}"></div>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label>D+ (m)</label><input type="number" id="bike-elevation" placeholder="250" value="${bike.elevationGain || ''}"></div>
+        <div class="form-group"><label>Cadence (rpm)</label><input type="number" id="bike-rpm" placeholder="80" value="${bike.rpm || ''}"></div>
+      </div>
+    </div>
+
+    <div style="display:flex;gap:8px;margin-top:12px">
+      <button class="btn btn-small" id="skip-workout" style="background:none;border:1px solid var(--danger);color:var(--danger);flex-shrink:0">Séance non faite</button>
+      <button class="btn btn-success" id="save-workout" style="flex:1">Enregistrer</button>
+    </div>
+  `;
+
+  document.getElementById('change-session-btn').addEventListener('click', async () => {
+    const data = { ...existing };
+    delete data.templateId;
+    delete data.dayType;
+    await saveWorkout(currentDate, data);
+    await renderEmptyDay(body, data);
+  });
+
+  document.getElementById('skip-workout').addEventListener('click', async () => {
+    await saveWorkout(currentDate, { ...existing, skipped: true, bikeData: null });
+    showToast('Séance marquée non faite');
+    await renderVeloSession(body, await getWorkout(currentDate));
+  });
+
+  document.getElementById('save-workout').addEventListener('click', async () => {
+    const btn = document.getElementById('save-workout');
+    btn.disabled = true;
+    btn.textContent = 'Enregistrement...';
+    try {
+      await saveWorkout(currentDate, {
+        ...existing,
+        bikeData: {
+          fcAvg: parseInt(document.getElementById('bike-fc')?.value) || 0,
+          wattsAvg: parseInt(document.getElementById('bike-watts')?.value) || 0,
+          durationMinutes: parseInt(document.getElementById('bike-duration')?.value) || 0,
+          distanceKm: parseFloat(document.getElementById('bike-distance')?.value) || 0,
+          elevationGain: parseInt(document.getElementById('bike-elevation')?.value) || 0,
+          rpm: parseInt(document.getElementById('bike-rpm')?.value) || 0,
+        },
+      });
+      showToast('Séance enregistrée ✓');
+    } catch {
+      showToast('Erreur — réessaie');
+    }
+    btn.disabled = false;
+    btn.textContent = 'Enregistrer';
+  });
+}
+
+// ── Render helpers ─────────────────────────────────────────────────────────────
+
+function renderMuscu(exercises, existing) {
+  if (exercises.length === 0) {
+    return `<div class="empty-state" style="margin-top:16px"><p style="color:var(--text-secondary);font-size:13px">Aucun exercice dans cette séance</p></div>`;
+  }
+
+  const isSkipped = existing?.skipped;
+
+  return exercises.map((ex, i) => {
     const saved = existing?.exercises?.find(e => e.id === ex.id);
     const done = saved?.done || false;
     const note = saved?.note || '';
@@ -339,22 +366,22 @@ function renderMuscu(exercises, existing, doneExercises, todoExercises) {
           <div class="exercise-info">
             <div class="exercise-name">
               ${ex.name}${isSkipped ? '<span class="skipped-badge">Pas fait</span>' : ''}
-              ${EXERCISE_GUIDE[ex.id] ? `<button class="exercise-guide-btn" data-exercise-id="${ex.id}" title="Comment faire cet exercice">
+              ${EXERCISE_GUIDE[ex.id] ? `<button class="exercise-guide-btn" data-exercise-id="${ex.id}" title="Comment faire">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
                   <circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/>
                 </svg>
               </button>` : ''}
               <button class="exercise-history-btn" data-exercise-id="${ex.id}" data-exercise-name="${ex.name}" title="Historique">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-                  <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                  <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
+                </svg>
               </button>
             </div>
-            <div class="exercise-details">${ex.notes}</div>
+            <div class="exercise-details">${ex.notes || ''}</div>
             <div class="exercise-meta">
-              <span class="exercise-tag">${ex.sets} × ${ex.reps}</span>
-              <span class="exercise-tag">Repos ${ex.rest}</span>
-              ${ex.weight !== '—' ? `<span class="exercise-tag">${ex.weight}</span>` : ''}
-              ${ex.phaseNote ? `<span class="exercise-tag" style="color:var(--accent)">${ex.phaseNote}</span>` : ''}
+              <span class="exercise-tag">${ex.defaultSets} × ${ex.defaultReps}</span>
+              <span class="exercise-tag">Repos ${ex.defaultRest}</span>
+              ${ex.weight && ex.weight !== '—' ? `<span class="exercise-tag">${ex.weight}</span>` : ''}
             </div>
           </div>
         </div>
@@ -366,63 +393,7 @@ function renderMuscu(exercises, existing, doneExercises, todoExercises) {
   }).join('');
 }
 
-function renderVelo(existing) {
-  const bike = existing?.bikeData || {};
-  const isSkipped = existing?.skipped;
-  return `
-    <div class="card bike-form ${isSkipped ? 'skipped' : ''}">
-      <div class="card-title">Session vélo${isSkipped ? '<span class="skipped-badge" style="margin-left:8px">Pas fait</span>' : ''}</div>
-      <p style="font-size:13px;color:var(--text-secondary);margin-bottom:14px">
-        Intensité modérée · 110-128 bpm · tu dois pouvoir parler
-      </p>
-      <div class="form-row">
-        <div class="form-group">
-          <label>FC moyenne (bpm)</label>
-          <input type="number" id="bike-fc" placeholder="120" value="${bike.fcAvg || ''}">
-        </div>
-        <div class="form-group">
-          <label>Watts moyens</label>
-          <input type="number" id="bike-watts" placeholder="80" value="${bike.wattsAvg || ''}">
-        </div>
-      </div>
-      <div class="form-row">
-        <div class="form-group">
-          <label>Durée (minutes)</label>
-          <input type="number" id="bike-duration" placeholder="45" value="${bike.durationMinutes || ''}">
-        </div>
-        <div class="form-group">
-          <label>Distance (km)</label>
-          <input type="number" id="bike-distance" step="0.1" placeholder="20" value="${bike.distanceKm || ''}">
-        </div>
-      </div>
-      <div class="form-row">
-        <div class="form-group">
-          <label>D+ (m)</label>
-          <input type="number" id="bike-elevation" placeholder="250" value="${bike.elevationGain || ''}">
-        </div>
-        <div class="form-group">
-          <label>Cadence (rpm)</label>
-          <input type="number" id="bike-rpm" placeholder="80" value="${bike.rpm || ''}">
-        </div>
-      </div>
-    </div>
-  `;
-}
-
-function renderRest() {
-  return `
-    <div class="empty-state">
-      <div class="empty-state-icon">♻️</div>
-      <p>Jour de repos</p>
-      <p style="font-size:13px;color:var(--text-secondary);margin-top:8px">
-        Étirements, mobilité, sommeil 7-9h
-      </p>
-    </div>
-  `;
-}
-
 async function openExerciseHistory(exerciseId, exerciseName, date) {
-  // Show modal with spinner immediately
   const overlay = document.createElement('div');
   overlay.className = 'guide-modal-overlay';
   overlay.innerHTML = `
@@ -446,9 +417,7 @@ async function openExerciseHistory(exerciseId, exerciseName, date) {
       content.innerHTML = `
         <button class="guide-modal-close">&times;</button>
         <h3 style="font-size:16px;margin-bottom:14px">${exerciseName}</h3>
-        <p style="color:var(--text-secondary);font-size:13px;text-align:center;padding:20px 0">
-          Aucun historique trouvé
-        </p>
+        <p style="color:var(--text-secondary);font-size:13px;text-align:center;padding:20px 0">Aucun historique trouvé</p>
       `;
     } else {
       content.innerHTML = `
@@ -465,9 +434,8 @@ async function openExerciseHistory(exerciseId, exerciseName, date) {
         </div>
       `;
     }
-
     content.querySelector('.guide-modal-close').addEventListener('click', close);
-  } catch (err) {
+  } catch {
     overlay.remove();
   }
 }

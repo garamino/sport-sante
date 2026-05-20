@@ -1,61 +1,44 @@
-import { today, formatDateFR, getDayOfWeek, getWeekNumber, getPhase, showToast } from '../utils.js';
-import { getUserProfile, getWorkout, getSleep, getWeekly } from '../db.js';
-import { getDaySchedule, getExercisesForDay } from '../program-data.js';
+import { today, formatDateFR } from '../utils.js';
+import { getUserProfile, getWorkout, getSleep } from '../db.js';
 import { showCoachAdvice, openCoachHistory, openCoachNotesModal } from '../coach.js';
 
 export async function render(container) {
   container.innerHTML = '<div class="spinner"></div>';
 
   try {
-    const profile = await getUserProfile();
     const todayStr = today();
-    const dayOfWeek = getDayOfWeek(todayStr);
-    const schedule = getDaySchedule(dayOfWeek);
-    const weekNum = profile?.startDate ? getWeekNumber(profile.startDate, todayStr) : 0;
-    const phase = getPhase(weekNum);
 
-    // Load today's data
-    const [workout, sleep, weekly] = await Promise.all([
+    const [profile, workout, sleep] = await Promise.all([
+      getUserProfile().catch(() => null),
       getWorkout(todayStr).catch(() => null),
       getSleep(todayStr).catch(() => null),
-      weekNum > 0 ? getWeekly(`W${String(weekNum).padStart(2, '0')}`).catch(() => null) : null,
     ]);
 
-    // Count exercises done today
-    const exercises = getExercisesForDay(dayOfWeek, phase);
+    // Workout summary for today
     const doneCount = workout?.exercises?.filter(e => e.done).length || 0;
-    const totalExercises = schedule.type === 'muscu' ? exercises.length : (schedule.type === 'velo' ? 1 : 0);
-    const workoutDone = workout ? (schedule.type === 'velo' ? !!workout.bikeData : doneCount > 0) : false;
+    const totalExercises = workout?.exercises?.length || 0;
+    const workoutDone = workout ? (workout.dayType === 'velo' ? !!workout.bikeData : doneCount > 0) : false;
+    const workoutLabel = workout?.muscleGroup || workout?.templateId
+      ? (workout.muscleGroup || '—')
+      : null;
+    const workoutIcon = workout?.dayType === 'velo' ? '🚴' : workout?.dayType === 'rest' ? '♻️' : '💪';
 
     container.innerHTML = `
-      <div class="dashboard-greeting">Salut ! ${schedule.icon}</div>
+      <div class="dashboard-greeting">Salut ! 👋</div>
       <div class="dashboard-date">${formatDateFR(todayStr)}</div>
-
-      ${!profile?.startDate ? `
-        <div class="card">
-          <div class="card-title">Configuration initiale</div>
-          <p style="margin-bottom:12px;font-size:14px;color:var(--text-secondary)">
-            Indique la date de début de ton programme (le lundi de la semaine 1) :
-          </p>
-          <div class="form-group">
-            <input type="date" id="start-date" value="${todayStr}">
-          </div>
-          <button class="btn btn-primary" id="save-start">Démarrer le programme</button>
-        </div>
-      ` : ''}
 
       <div class="stat-grid">
         <div class="stat-box">
-          <div class="stat-value">${weekNum > 0 ? `S${weekNum}` : '—'}</div>
-          <div class="stat-label">Semaine</div>
-        </div>
-        <div class="stat-box">
-          <div class="stat-value">${weekly?.weight ? weekly.weight + ' kg' : (profile?.currentWeight ? profile.currentWeight + ' kg' : '—')}</div>
+          <div class="stat-value">${profile?.currentWeight ? profile.currentWeight + ' kg' : '—'}</div>
           <div class="stat-label">Poids</div>
         </div>
         <div class="stat-box">
           <div class="stat-value">${sleep?.quality ? sleep.quality + '/10' : '—'}</div>
           <div class="stat-label">Nuit</div>
+        </div>
+        <div class="stat-box">
+          <div class="stat-value">${sleep?.hoursSlept ? sleep.hoursSlept + 'h' : '—'}</div>
+          <div class="stat-label">Sommeil</div>
         </div>
         <div class="stat-box">
           <div class="stat-value">${workoutDone ? '✓' : '—'}</div>
@@ -64,28 +47,24 @@ export async function render(container) {
       </div>
 
       <div class="card">
-        <div class="card-title">Aujourd'hui — ${schedule.label}</div>
-        ${schedule.type === 'muscu' ? `
+        <div class="card-title">Aujourd'hui</div>
+        ${workout ? `
           <p style="font-size:14px;color:var(--text-secondary);margin-bottom:4px">
-            ${doneCount}/${totalExercises} exercices · ${schedule.duration}
-          </p>
-        ` : schedule.type === 'velo' ? `
-          <p style="font-size:14px;color:var(--text-secondary);margin-bottom:4px">
-            ${workout?.bikeData ? `${workout.bikeData.durationMinutes} min · ${workout.bikeData.fcAvg} bpm · ${workout.bikeData.wattsAvg} W` : schedule.duration}
+            ${workoutIcon} ${workoutLabel || 'Séance enregistrée'}
+            ${workout.dayType === 'muscu' && totalExercises > 0 ? ` · ${doneCount}/${totalExercises} exercices` : ''}
+            ${workout.dayType === 'velo' && workout.bikeData?.durationMinutes ? ` · ${workout.bikeData.durationMinutes} min · ${workout.bikeData.fcAvg} bpm` : ''}
           </p>
         ` : `
-          <p style="font-size:14px;color:var(--text-secondary)">Étirements, mobilité, sommeil 7-9h</p>
+          <p style="font-size:14px;color:var(--text-secondary)">Aucune séance enregistrée</p>
         `}
       </div>
 
       <div class="section-title">Actions rapides</div>
       <div class="quick-actions">
-        ${schedule.type !== 'rest' ? `
-          <a href="#/workout" class="quick-action">
-            <div class="quick-action-icon" style="background:var(--accent)">${schedule.icon}</div>
-            <span>${workoutDone ? 'Modifier ma séance' : 'Logger ma séance'}</span>
-          </a>
-        ` : ''}
+        <a href="#/workout" class="quick-action">
+          <div class="quick-action-icon" style="background:var(--accent)">💪</div>
+          <span>${workoutDone ? 'Modifier ma séance' : 'Logger ma séance'}</span>
+        </a>
         <a href="#/sleep" class="quick-action">
           <div class="quick-action-icon" style="background:#7e57c2">🌙</div>
           <span>${sleep ? 'Modifier ma nuit' : 'Logger ma nuit'}</span>
@@ -117,35 +96,14 @@ export async function render(container) {
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 5v14M5 12h14"/></svg>
         Ajouter une note
       </button>
-
     `;
 
-    // Setup start date button
-    const saveStartBtn = document.getElementById('save-start');
-    if (saveStartBtn) {
-      const { saveUserProfile } = await import('../db.js');
-      saveStartBtn.addEventListener('click', async () => {
-        const startDate = document.getElementById('start-date').value;
-        if (startDate) {
-          await saveUserProfile({ startDate });
-          const { updateHeader } = await import('../components/nav.js');
-          await updateHeader();
-          render(container);
-        }
-      });
-    }
-
-    // Ask coach
     document.getElementById('ask-coach-btn')?.addEventListener('click', () => {
       showCoachAdvice('workout', todayStr);
     });
-
-    // Coach history
     document.getElementById('coach-history-btn')?.addEventListener('click', () => {
       openCoachHistory();
     });
-
-    // Open coach notes modal
     document.getElementById('coach-notes-btn')?.addEventListener('click', () => {
       openCoachNotesModal(todayStr);
     });

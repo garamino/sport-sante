@@ -183,6 +183,58 @@ export async function getAllCoachNotes() {
   return snap.docs.map(d => ({ id: d.id, ...d.data() }));
 }
 
+// === Library — Exercises ===
+export async function getExercises() {
+  const q = query(userCollection('exercises'), orderBy('name', 'asc'));
+  const snap = await getDocs(q);
+  return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+}
+
+export async function getExercise(id) {
+  const snap = await getDoc(userDoc(`exercises/${id}`));
+  return snap.exists() ? { id: snap.id, ...snap.data() } : null;
+}
+
+export async function saveExercise(data) {
+  if (data.id) {
+    const { id, ...rest } = data;
+    await setDoc(userDoc(`exercises/${id}`), { ...rest, updatedAt: Timestamp.now() }, { merge: true });
+    return id;
+  }
+  const ref = await addDoc(userCollection('exercises'), { ...data, createdAt: Timestamp.now() });
+  return ref.id;
+}
+
+export async function deleteExercise(id) {
+  await deleteDoc(userDoc(`exercises/${id}`));
+}
+
+// === Library — Workout Templates ===
+export async function getWorkoutTemplates() {
+  const q = query(userCollection('workoutTemplates'), orderBy('name', 'asc'));
+  const snap = await getDocs(q);
+  return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+}
+
+export async function getWorkoutTemplate(id) {
+  const snap = await getDoc(userDoc(`workoutTemplates/${id}`));
+  return snap.exists() ? { id: snap.id, ...snap.data() } : null;
+}
+
+export async function saveWorkoutTemplate(data) {
+  if (data.id) {
+    const { id, ...rest } = data;
+    await setDoc(userDoc(`workoutTemplates/${id}`), { ...rest, updatedAt: Timestamp.now() }, { merge: true });
+    return id;
+  }
+  const ref = await addDoc(userCollection('workoutTemplates'), { ...data, createdAt: Timestamp.now() });
+  return ref.id;
+}
+
+export async function deleteWorkoutTemplate(id) {
+  await deleteDoc(userDoc(`workoutTemplates/${id}`));
+}
+
 // === Health Documents ===
 export async function uploadHealthFile(file) {
   const uid = getUid();
