@@ -235,6 +235,25 @@ export async function deleteWorkoutTemplate(id) {
   await deleteDoc(userDoc(`workoutTemplates/${id}`));
 }
 
+// === Strava ===
+export async function getStravaCredentials() {
+  const snap = await getDoc(userDoc('settings/stravaCredentials'));
+  return snap.exists() ? snap.data() : null;
+}
+
+export async function saveStravaCredentials(data) {
+  await setDoc(userDoc('settings/stravaCredentials'), { ...data, updatedAt: Timestamp.now() });
+}
+
+export async function getStravaTokens() {
+  const snap = await getDoc(userDoc('settings/strava'));
+  return snap.exists() ? snap.data() : null;
+}
+
+export async function clearStravaTokens() {
+  await deleteDoc(userDoc('settings/strava'));
+}
+
 // === Health Documents ===
 export async function uploadHealthFile(file) {
   const uid = getUid();

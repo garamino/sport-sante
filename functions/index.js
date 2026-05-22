@@ -1,6 +1,8 @@
 const { onCall, HttpsError } = require("firebase-functions/v2/https");
 const { initializeApp } = require("firebase-admin/app");
 const { getFirestore, FieldValue } = require("firebase-admin/firestore");
+
+const STRAVA_TOKEN_URL = "https://www.strava.com/oauth/token";
 const { getStorage } = require("firebase-admin/storage");
 const Anthropic = require("@anthropic-ai/sdk");
 
@@ -563,5 +565,77 @@ Réponds en français. Sois factuel, pas de conseil médical.`,
       }
       throw new HttpsError("internal", "Erreur lors de l'analyse du document.");
     }
+  }
+);
+
+// ========== STRAVA — ÉCHANGE DE CODE OAUTH ==========
+exports.stravaExchange = onCall(
+  { maxInstances: 3, timeoutSeconds: 30, region: "europe-west1", invoker: "public" },
+  async (request) => {
+    if (!request.auth) throw new HttpsError("unauthenticated", "Authentification requise.");
+    const uid = request.auth.uid;
+    const { code } = request.data;
+    if (!code) throw new HttpsError("invalid-argument", "Code OAuth manquant.");
+
+    const credsDoc = await db.doc(`users/${uid}/settings/stravaCredentials`).get();
+    if (!credsDoc.exists) throw new HttpsError("failed-precondition", "Identifiants Strava non configurés.");
+    const { clientId, clientSecret } = credsDoc.data();
+
+    const resp = await fetch(STRAVA_TOKEN_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ client_id: clientId, client_secret: clientSecret, code, grant_type: "authorization_code" }),
+    });
+    const tokens = await resp.json();
+    if (!resp.ok || tokens.errors) {
+      throw new HttpsError("invalid-argument", tokens.message || "Échange de token Strava échoué.");
+    }
+
+    await db.doc(`users/${uid}/settings/strava`).set({
+      accessToken: tokens.access_token,
+      refreshToken: tokens.refresh_token,
+      expiresAt: tokens.expires_at,
+      athleteId: tokens.athlete?.id || null,
+      athleteName: `${tokens.athlete?.firstname || ""} ${tokens.athlete?.lastname || ""}`.trim(),
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+
+    return { ok: true, athleteName: tokens.athlete?.firstname || "Athlète" };
+  }
+);
+
+// ========== STRAVA — RENOUVELLEMENT DU TOKEN ==========
+exports.stravaRefresh = onCall(
+  { maxInstances: 3, timeoutSeconds: 30, region: "europe-west1", invoker: "public" },
+  async (request) => {
+    if (!request.auth) throw new HttpsError("unauthenticated", "Authentification requise.");
+    const uid = request.auth.uid;
+
+    const [credsDoc, stravaDoc] = await Promise.all([
+      db.doc(`users/${uid}/settings/stravaCredentials`).get(),
+      db.doc(`users/${uid}/settings/strava`).get(),
+    ]);
+    if (!credsDoc.exists || !stravaDoc.exists) {
+      throw new HttpsError("not-found", "Compte Strava non connecté.");
+    }
+    const { clientId, clientSecret } = credsDoc.data();
+    const { refreshToken } = stravaDoc.data();
+
+    const resp = await fetch(STRAVA_TOKEN_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ client_id: clientId, client_secret: clientSecret, refresh_token: refreshToken, grant_type: "refresh_token" }),
+    });
+    const tokens = await resp.json();
+    if (!resp.ok) throw new HttpsError("internal", "Renouvellement du token Strava échoué.");
+
+    await db.doc(`users/${uid}/settings/strava`).update({
+      accessToken: tokens.access_token,
+      refreshToken: tokens.refresh_token,
+      expiresAt: tokens.expires_at,
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+
+    return { accessToken: tokens.access_token, expiresAt: tokens.expires_at };
   }
 );

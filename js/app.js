@@ -1,8 +1,9 @@
 import { onAuth, logout, getCurrentUser } from './auth.js';
 import { registerRoute, initRouter, navigateTo } from './router.js';
 import { updateHeader } from './components/nav.js';
-import { getUserProfile, saveApiKey, getCoachWindow, saveCoachWindow } from './db.js';
+import { getUserProfile, saveApiKey, getCoachWindow, saveCoachWindow, getStravaCredentials, saveStravaCredentials, getStravaTokens, clearStravaTokens } from './db.js';
 import { showToast } from './utils.js';
+import { buildStravaAuthUrl, exchangeStravaCode } from './strava.js';
 
 // Import views
 import * as loginView from './views/login.js';
@@ -43,6 +44,18 @@ onAuth(async (user) => {
     await updateHeader();
     migrateMedsToIntakes().catch(err => console.warn('Migration intakesV1 a échoué :', err));
     seedLibrary().catch(err => console.warn('Seed library a échoué :', err));
+
+    // Callback OAuth Strava (?code=... dans l'URL)
+    const urlParams = new URLSearchParams(window.location.search);
+    const stravaCode = urlParams.get('code');
+    const stravaScope = urlParams.get('scope');
+    if (stravaCode && stravaScope?.includes('activity')) {
+      window.history.replaceState({}, '', window.location.pathname + window.location.hash);
+      exchangeStravaCode(stravaCode)
+        .then(result => { if (result.ok) showToast(`Strava connecté ✓`); })
+        .catch(() => showToast('Erreur connexion Strava'));
+    }
+
     initRouter(appContainer);
     if (window.location.hash === '#/login' || !window.location.hash) {
       navigateTo('/dashboard');
@@ -69,9 +82,15 @@ settingsBtn.addEventListener('click', async () => {
   document.querySelector('.settings-modal-overlay')?.remove();
 
   const user = getCurrentUser();
-  const profile = await getUserProfile().catch(() => null);
+  const [profile, coachWindow, stravaCreds, stravaTokens] = await Promise.all([
+    getUserProfile().catch(() => null),
+    getCoachWindow().catch(() => 7),
+    getStravaCredentials().catch(() => null),
+    getStravaTokens().catch(() => null),
+  ]);
   const hasKey = profile?.hasApiKey || false;
-  const coachWindow = await getCoachWindow().catch(() => 7);
+  const stravaConfigured = !!(stravaCreds?.clientId && stravaCreds?.clientSecret);
+  const stravaConnected = !!(stravaTokens?.accessToken);
 
   const overlay = document.createElement('div');
   overlay.className = 'settings-modal-overlay';
@@ -115,6 +134,42 @@ settingsBtn.addEventListener('click', async () => {
           ${[7, 14, 21, 30].map(d => `<option value="${d}" ${d === coachWindow ? 'selected' : ''}>${d} derniers jours</option>`).join('')}
         </select>
       </div>
+
+      <div class="settings-section">
+        <div class="settings-label">Strava</div>
+        ${stravaConnected ? `
+          <div class="settings-status settings-status-ok">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>
+            Connecté${stravaTokens.athleteName ? ' — ' + stravaTokens.athleteName : ''}
+          </div>
+          <button class="btn btn-small" id="settings-strava-disconnect" style="margin-top:8px;width:100%;background:none;border:1px solid var(--danger);color:var(--danger)">
+            Déconnecter Strava
+          </button>
+        ` : stravaConfigured ? `
+          <div class="settings-status settings-status-missing">Identifiants configurés · non connecté</div>
+          <button class="btn btn-primary btn-small" id="settings-strava-connect" style="margin-top:8px;width:100%">
+            Connecter mon compte Strava
+          </button>
+          <p style="font-size:11px;color:var(--text-secondary);margin-top:8px">
+            Tu peux aussi <span id="settings-strava-show-creds" style="color:var(--accent);cursor:pointer;text-decoration:underline">modifier les identifiants</span>
+          </p>
+          <div id="strava-creds-form" class="hidden">
+            <input type="text" id="settings-strava-client-id" placeholder="Client ID" value="${stravaCreds?.clientId || ''}" style="margin-top:8px">
+            <input type="password" id="settings-strava-client-secret" placeholder="Client Secret" style="margin-top:6px">
+            <button class="btn btn-small btn-primary" id="settings-strava-save-creds" style="margin-top:6px;width:100%">Mettre à jour</button>
+          </div>
+        ` : `
+          <p style="font-size:12px;color:var(--text-secondary);margin:4px 0 10px">
+            Crée une appli sur <a href="https://www.strava.com/settings/api" target="_blank" rel="noopener" style="color:var(--accent)">strava.com/settings/api</a>,
+            copie ton <strong>Client ID</strong> et <strong>Client Secret</strong>, et définis le domaine de callback sur <code style="font-size:11px;background:var(--bg-primary);padding:1px 4px;border-radius:3px">garamino.github.io</code>
+          </p>
+          <input type="text" id="settings-strava-client-id" placeholder="Client ID (ex: 12345)">
+          <input type="password" id="settings-strava-client-secret" placeholder="Client Secret" style="margin-top:6px">
+          <button class="btn btn-primary btn-small" id="settings-strava-save-creds" style="margin-top:8px;width:100%">
+            Configurer Strava
+          </button>
+        `}
+      </div>
     </div>
   `;
   document.body.appendChild(overlay);
@@ -149,6 +204,50 @@ settingsBtn.addEventListener('click', async () => {
     } catch {
       showToast('Erreur — réessaie');
     }
+  });
+
+  // Strava — enregistrer les identifiants
+  document.getElementById('settings-strava-save-creds')?.addEventListener('click', async (e) => {
+    const btn = e.target;
+    const clientId = document.getElementById('settings-strava-client-id')?.value.trim();
+    const clientSecret = document.getElementById('settings-strava-client-secret')?.value.trim();
+    if (!clientId || !clientSecret) { showToast('Remplis les deux champs Strava'); return; }
+    btn.disabled = true;
+    btn.textContent = 'Enregistrement...';
+    try {
+      await saveStravaCredentials({ clientId, clientSecret });
+      showToast('Identifiants Strava enregistrés ✓');
+      close();
+      settingsBtn.click();
+    } catch {
+      showToast('Erreur — réessaie');
+      btn.disabled = false;
+      btn.textContent = 'Configurer Strava';
+    }
+  });
+
+  // Strava — connecter le compte (redirect OAuth)
+  document.getElementById('settings-strava-connect')?.addEventListener('click', async () => {
+    const creds = await getStravaCredentials().catch(() => null);
+    if (!creds?.clientId) { showToast('Identifiants Strava introuvables'); return; }
+    window.location.href = buildStravaAuthUrl(creds.clientId);
+  });
+
+  // Strava — déconnecter
+  document.getElementById('settings-strava-disconnect')?.addEventListener('click', async () => {
+    try {
+      await clearStravaTokens();
+      showToast('Strava déconnecté');
+      close();
+      settingsBtn.click();
+    } catch {
+      showToast('Erreur — réessaie');
+    }
+  });
+
+  // Strava — afficher le formulaire d'édition des credentials
+  document.getElementById('settings-strava-show-creds')?.addEventListener('click', () => {
+    document.getElementById('strava-creds-form')?.classList.toggle('hidden');
   });
 });
 

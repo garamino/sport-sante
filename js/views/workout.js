@@ -1,6 +1,7 @@
 import { today, formatDateFR, addDays, showToast } from '../utils.js';
 import { getWorkout, saveWorkout, getExerciseHistory, getWorkoutTemplates, getWorkoutTemplate, getExercise } from '../db.js';
 import { EXERCISE_GUIDE, openExerciseGuide } from '../exercise-guide.js';
+import { importLatestCyclingActivity } from '../strava.js';
 
 let currentDate = null;
 
@@ -283,7 +284,13 @@ function renderVeloSession(body, existing) {
     ${isSkipped ? `<div class="skipped-banner">Séance non faite</div>` : ''}
 
     <div class="card bike-form ${isSkipped ? 'skipped' : ''}">
-      <div class="card-title">Session vélo</div>
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
+        <div class="card-title" style="margin-bottom:0">Session vélo</div>
+        <button class="btn btn-small btn-strava" id="strava-import-btn" style="display:flex;align-items:center;gap:5px;font-size:12px;padding:5px 10px;background:#fc4c02;color:#fff;border:none">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M15.387 17.944l-2.089-4.116h-3.065L15.387 24l5.15-10.172h-3.066m-7.008-5.599l2.836 5.598h4.172L10.463 0l-7 13.828h4.169"/></svg>
+          Import Strava
+        </button>
+      </div>
       <p style="font-size:13px;color:var(--text-secondary);margin-bottom:14px">Intensité modérée · 110-128 bpm</p>
       <div class="form-row">
         <div class="form-group"><label>FC moyenne (bpm)</label><input type="number" id="bike-fc" placeholder="120" value="${bike.fcAvg || ''}"></div>
@@ -304,6 +311,35 @@ function renderVeloSession(body, existing) {
       <button class="btn btn-success" id="save-workout" style="flex:1">Enregistrer</button>
     </div>
   `;
+
+  document.getElementById('strava-import-btn').addEventListener('click', async () => {
+    const btn = document.getElementById('strava-import-btn');
+    btn.disabled = true;
+    btn.textContent = 'Chargement...';
+    try {
+      const bikeData = await importLatestCyclingActivity(currentDate);
+      if (!bikeData) {
+        showToast('Aucune sortie vélo trouvée sur Strava pour cette date');
+        return;
+      }
+      if (bikeData.fcAvg) document.getElementById('bike-fc').value = bikeData.fcAvg;
+      if (bikeData.wattsAvg) document.getElementById('bike-watts').value = bikeData.wattsAvg;
+      if (bikeData.durationMinutes) document.getElementById('bike-duration').value = bikeData.durationMinutes;
+      if (bikeData.distanceKm) document.getElementById('bike-distance').value = bikeData.distanceKm;
+      if (bikeData.elevationGain) document.getElementById('bike-elevation').value = bikeData.elevationGain;
+      if (bikeData.rpm) document.getElementById('bike-rpm').value = bikeData.rpm;
+      showToast(`Importé depuis Strava : ${bikeData.stravaActivityName || 'Sortie vélo'} ✓`);
+    } catch (err) {
+      if (err.code === 'not_connected') {
+        showToast('Connecte ton compte Strava dans les paramètres ⚙️');
+      } else {
+        showToast(err.message || 'Erreur import Strava');
+      }
+    } finally {
+      btn.disabled = false;
+      btn.innerHTML = `<svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M15.387 17.944l-2.089-4.116h-3.065L15.387 24l5.15-10.172h-3.066m-7.008-5.599l2.836 5.598h4.172L10.463 0l-7 13.828h4.169"/></svg> Import Strava`;
+    }
+  });
 
   document.getElementById('change-session-btn').addEventListener('click', async () => {
     const data = { ...existing };
