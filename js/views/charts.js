@@ -23,6 +23,62 @@ const PRODUCT_COLORS = {
   'Forténight':           '#1e88e5',
 };
 
+// === Vue composants : compositions et couleurs ===
+
+// Quantités pour 1 unité de dose, en mg (µg convertis : 1 µg = 0.001 mg)
+const PRODUCT_COMPOSITIONS = {
+  'Metasleep': {
+    'Valériane':    150,   'L-Théanine':   100,   'Mélisse':       50,
+    'Passiflore':    50,   'Mélatonine':     0.295,'Magnésium':     60,
+    'Vit. B6':        1,   'Folate':         0.1,  'Vit. B12':       0.025,
+  },
+  'Metarelax': {
+    'Magnésium':    200,   'Vit. B6':        2,    'Folate':         0.2,
+    'Vit. B12':     0.025, 'Vit. D':         0.025,'Taurine':      300,
+  },
+  'Forténight': {
+    'Mélatonine':   0.295, 'GABA':          100,   'Passiflore':   100,
+    'Valériane':   100,    'Pavot de Calif.': 50,  'Vit. B3':       16,
+    'Vit. B6':      1.4,
+  },
+  'Ashwagandha 300mg':   { 'Ashwagandha':   300 },
+  'L-Théanine 200mg':    { 'L-Théanine':    200 },
+  'Trazodone 100mg':     { 'Trazodone HCl': 100 },
+  'Stilnoct 10mg':       { 'Zolpidem':       10 },
+  'D-Pearls 38 microgr': { 'Vit. D':         0.038 },
+};
+
+// Ordre d'affichage des ingrédients dans la vue composants
+const INGREDIENTS = [
+  'Valériane', 'L-Théanine', 'Mélisse', 'Passiflore', 'Mélatonine',
+  'Magnésium', 'Vit. B6', 'Folate', 'Vit. B12', 'Taurine',
+  'Vit. D', 'GABA', 'Pavot de Calif.', 'Vit. B3',
+  'Ashwagandha', 'Trazodone HCl', 'Zolpidem',
+];
+
+// Ingrédients à afficher en µg dans les tooltips (valeur < 1 mg par dose)
+const UG_INGREDIENTS = new Set(['Mélatonine', 'Folate', 'Vit. B12', 'Vit. D']);
+
+const INGREDIENT_COLORS = {
+  'Valériane':         '#8bc34a', 'L-Théanine':        '#4fc3f7',
+  'Mélisse':           '#aed581', 'Passiflore':        '#ce93d8',
+  'Mélatonine':        '#f48fb1', 'Magnésium':         '#80cbc4',
+  'Vit. B6':           '#ffb74d', 'Folate':            '#fff176',
+  'Vit. B12':          '#e0e0e0', 'Taurine':           '#ff8a65',
+  'Vit. D':            '#ffe082', 'GABA':              '#80deea',
+  'Pavot de Calif.':   '#ef9a9a', 'Vit. B3':           '#bcaaa4',
+  'Ashwagandha':       '#a5d6a7', 'Trazodone HCl':     '#ff7043',
+  'Zolpidem':          '#b0bec5',
+};
+
+function fmtIngredientAmt(ingredient, mg) {
+  if (UG_INGREDIENTS.has(ingredient)) {
+    const ug = mg * 1000;
+    return `${+ug.toFixed(ug < 10 ? 2 : 0)} µg`;
+  }
+  return `${+mg.toFixed(mg < 10 ? 2 : 1)} mg`;
+}
+
 const MOON_PHASES = [
   { icon: '🌑', label: 'Nouvelle lune' },
   { icon: '🌒', label: 'Croissant ↑' },
@@ -83,6 +139,9 @@ function effectiveNight(intakeDate, time) {
 let currentSleepPeriod = '3m';
 let currentSleepProduct = 'all';
 let currentSleepQualityPeriod = '3m';
+let currentMedsView = 'products'; // 'products' | 'ingredients'
+let currentIngredientPeriod = '3m';
+let currentIngredient = 'all';
 
 let chartInstance = null;
 let perfChartInstance = null;
@@ -759,19 +818,36 @@ function renderEfficaciteChart(container, bikeData, colors, baseOptions) {
 // === Sleep meds section ===
 
 function buildNightDoseMap(intakesData) {
-  // Map<night, Map<product, totalDose>>
   const nightMap = new Map();
   for (const day of intakesData || []) {
-    const entries = day?.entries || [];
-    for (const e of entries) {
-      if (!e?.product) continue;
-      if (!SLEEP_PRODUCTS.includes(e.product)) continue;
+    for (const e of day?.entries || []) {
+      if (!e?.product || !SLEEP_PRODUCTS.includes(e.product)) continue;
       const night = effectiveNight(day.date, e.time);
       const dose = qtyToNumber(e.quantity);
       if (dose <= 0) continue;
       if (!nightMap.has(night)) nightMap.set(night, new Map());
       const m = nightMap.get(night);
       m.set(e.product, (m.get(e.product) || 0) + dose);
+    }
+  }
+  return nightMap;
+}
+
+function buildIngredientNightMap(intakesData) {
+  // Map<night, Map<ingredient, totalMg>>
+  const nightMap = new Map();
+  for (const day of intakesData || []) {
+    for (const e of day?.entries || []) {
+      const compo = PRODUCT_COMPOSITIONS[e?.product];
+      if (!compo) continue;
+      const dose = qtyToNumber(e.quantity);
+      if (dose <= 0) continue;
+      const night = effectiveNight(day.date, e.time);
+      if (!nightMap.has(night)) nightMap.set(night, new Map());
+      const m = nightMap.get(night);
+      for (const [ing, mgPer1] of Object.entries(compo)) {
+        m.set(ing, (m.get(ing) || 0) + dose * mgPer1);
+      }
     }
   }
   return nightMap;
@@ -803,84 +879,158 @@ function renderSleepMedsSection(sleepData, intakesData, colors, baseOptions) {
 
   section.innerHTML = `
     <div class="section-title">Prises & impact sur le sommeil</div>
+    <div class="meds-view-tabs">
+      <button class="meds-view-tab ${currentMedsView === 'products' ? 'active' : ''}" data-view="products">Vue produits</button>
+      <button class="meds-view-tab ${currentMedsView === 'ingredients' ? 'active' : ''}" data-view="ingredients">Vue composants</button>
+    </div>
+    <div id="meds-tab-content"></div>
+  `;
+
+  section.querySelectorAll('.meds-view-tab').forEach(btn => {
+    btn.addEventListener('click', () => {
+      currentMedsView = btn.dataset.view;
+      section.querySelectorAll('.meds-view-tab').forEach(b =>
+        b.classList.toggle('active', b.dataset.view === currentMedsView));
+      renderMedsTabContent(sleepData, intakesData, colors, baseOptions);
+    });
+  });
+
+  renderMedsTabContent(sleepData, intakesData, colors, baseOptions);
+}
+
+function renderMedsTabContent(sleepData, intakesData, colors, baseOptions) {
+  if (medsChartInstance) { medsChartInstance.destroy(); medsChartInstance = null; }
+  const content = document.getElementById('meds-tab-content');
+  if (!content) return;
+  if (currentMedsView === 'products') {
+    renderProductsTab(content, sleepData, intakesData, colors, baseOptions);
+  } else {
+    renderIngredientsTab(content, sleepData, intakesData, colors, baseOptions);
+  }
+}
+
+// ── Vue produits ──────────────────────────────────────────────────────────────
+
+function renderProductsTab(content, sleepData, intakesData, colors, baseOptions) {
+  content.innerHTML = `
     <div class="period-buttons" id="meds-period-buttons"></div>
     <div class="product-chips" id="meds-product-chips"></div>
     <div id="meds-correlation" class="meds-correlation"></div>
     <div class="chart-container"><canvas id="meds-chart"></canvas></div>
-    <div id="meds-empty" class="empty-state hidden">
-      <p>Pas de données sur la période</p>
-    </div>
+    <div id="meds-empty" class="empty-state hidden"><p>Pas de données sur la période</p></div>
   `;
 
-  // Period buttons
-  const pb = section.querySelector('#meds-period-buttons');
+  const pb = content.querySelector('#meds-period-buttons');
   pb.innerHTML = ['3m', '6m', 'all'].map(p =>
     `<button class="period-btn ${p === currentSleepPeriod ? 'active' : ''}" data-period="${p}">${p === 'all' ? 'Tout' : p === '3m' ? '3 mois' : '6 mois'}</button>`
   ).join('');
   pb.querySelectorAll('.period-btn').forEach(btn => {
     btn.addEventListener('click', () => {
       currentSleepPeriod = btn.dataset.period;
-      renderSleepMedsSection(sleepData, intakesData, colors, baseOptions);
+      renderMedsTabContent(sleepData, intakesData, colors, baseOptions);
     });
   });
 
-  // Product chips
-  const cp = section.querySelector('#meds-product-chips');
-  const chipHtml = [
+  const cp = content.querySelector('#meds-product-chips');
+  cp.innerHTML = [
     `<button class="product-chip ${currentSleepProduct === 'all' ? 'active' : ''}" data-product="all">Tous</button>`,
     ...SLEEP_PRODUCTS.map(p => {
       const c = PRODUCT_COLORS[p];
-      const active = currentSleepProduct === p;
-      return `<button class="product-chip ${active ? 'active' : ''}" data-product="${p}" style="--chip:${c}">
+      return `<button class="product-chip ${currentSleepProduct === p ? 'active' : ''}" data-product="${p}" style="--chip:${c}">
         <span class="chip-dot" style="background:${c}"></span>${p}
       </button>`;
     }),
   ].join('');
-  cp.innerHTML = chipHtml;
   cp.querySelectorAll('.product-chip').forEach(btn => {
     btn.addEventListener('click', () => {
       currentSleepProduct = btn.dataset.product;
-      renderSleepMedsSection(sleepData, intakesData, colors, baseOptions);
+      renderMedsTabContent(sleepData, intakesData, colors, baseOptions);
     });
   });
 
-  // Filter by period
   const periodSleep = filterSleepByPeriod(sleepData.filter(s => s.quality), currentSleepPeriod);
   const nightMap = buildNightDoseMap(intakesData);
-
-  // Correlation cards (always vs full filtered data, not affected by selected product)
   renderCorrelationCards(periodSleep, nightMap);
 
-  // Chart
   if (periodSleep.length === 0) {
-    document.querySelector('#meds-chart').parentElement.classList.add('hidden');
-    document.querySelector('#meds-empty').classList.remove('hidden');
+    content.querySelector('#meds-chart').parentElement.classList.add('hidden');
+    content.querySelector('#meds-empty').classList.remove('hidden');
     return;
   }
-
   renderMedsChart(periodSleep, nightMap, colors, baseOptions);
 }
+
+// ── Vue composants ────────────────────────────────────────────────────────────
+
+function renderIngredientsTab(content, sleepData, intakesData, colors, baseOptions) {
+  content.innerHTML = `
+    <div class="period-buttons" id="ing-period-buttons"></div>
+    <div class="product-chips" id="ing-chips"></div>
+    <div id="ing-correlation" class="meds-correlation"></div>
+    <div class="chart-container"><canvas id="ing-chart"></canvas></div>
+    <div id="ing-empty" class="empty-state hidden"><p>Pas de données sur la période</p></div>
+  `;
+
+  const pb = content.querySelector('#ing-period-buttons');
+  pb.innerHTML = ['3m', '6m', 'all'].map(p =>
+    `<button class="period-btn ${p === currentIngredientPeriod ? 'active' : ''}" data-period="${p}">${p === 'all' ? 'Tout' : p === '3m' ? '3 mois' : '6 mois'}</button>`
+  ).join('');
+  pb.querySelectorAll('.period-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      currentIngredientPeriod = btn.dataset.period;
+      renderMedsTabContent(sleepData, intakesData, colors, baseOptions);
+    });
+  });
+
+  const cp = content.querySelector('#ing-chips');
+  cp.innerHTML = [
+    `<button class="product-chip ${currentIngredient === 'all' ? 'active' : ''}" data-ingredient="all">Tous</button>`,
+    ...INGREDIENTS.map(ing => {
+      const c = INGREDIENT_COLORS[ing] || '#888';
+      return `<button class="product-chip ${currentIngredient === ing ? 'active' : ''}" data-ingredient="${ing}" style="--chip:${c}">
+        <span class="chip-dot" style="background:${c}"></span>${ing}
+      </button>`;
+    }),
+  ].join('');
+  cp.querySelectorAll('.product-chip[data-ingredient]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      currentIngredient = btn.dataset.ingredient;
+      renderMedsTabContent(sleepData, intakesData, colors, baseOptions);
+    });
+  });
+
+  const periodSleep = filterSleepByPeriod(sleepData.filter(s => s.quality), currentIngredientPeriod);
+  const ingredientMap = buildIngredientNightMap(intakesData);
+  renderIngredientCorrelationCards(periodSleep, ingredientMap);
+
+  if (periodSleep.length === 0) {
+    content.querySelector('#ing-chart').parentElement.classList.add('hidden');
+    content.querySelector('#ing-empty').classList.remove('hidden');
+    return;
+  }
+  renderIngredientsChart(periodSleep, ingredientMap, colors, baseOptions);
+}
+
+// ── Correlation cards ─────────────────────────────────────────────────────────
 
 function renderCorrelationCards(periodSleep, nightMap) {
   const el = document.getElementById('meds-correlation');
   if (!el) return;
   if (periodSleep.length === 0) { el.innerHTML = ''; return; }
 
+  const avg = arr => arr.reduce((a, b) => a + b, 0) / arr.length;
   const cards = SLEEP_PRODUCTS.map(p => {
-    const withQ = [];
-    const withoutQ = [];
+    const withQ = [], withoutQ = [];
     for (const s of periodSleep) {
       const m = nightMap.get(s.date);
       const dose = m ? (m.get(p) || 0) : 0;
-      if (dose > 0) withQ.push(s.quality);
-      else withoutQ.push(s.quality);
+      (dose > 0 ? withQ : withoutQ).push(s.quality);
     }
     if (withQ.length === 0) return null;
-    const avg = arr => arr.reduce((a, b) => a + b, 0) / arr.length;
     const aw = avg(withQ);
     const ao = withoutQ.length ? avg(withoutQ) : null;
     const delta = ao !== null ? aw - ao : null;
-    const deltaColor = delta === null ? '#8892a0' : (delta >= 0 ? '#1D9E75' : '#E24B4A');
+    const deltaColor = delta === null ? '#8892a0' : delta >= 0 ? '#1D9E75' : '#E24B4A';
     const deltaTxt = delta === null ? '—' : `${delta >= 0 ? '+' : ''}${delta.toFixed(1)}`;
     return `
       <div class="meds-corr-card" style="border-left:3px solid ${PRODUCT_COLORS[p]}">
@@ -890,12 +1040,45 @@ function renderCorrelationCards(periodSleep, nightMap) {
           <span class="meds-corr-without">Sans : <b>${ao !== null ? ao.toFixed(1) : '—'}</b> <span class="meds-corr-n">(n=${withoutQ.length})</span></span>
           <span class="meds-corr-delta" style="color:${deltaColor}">${deltaTxt}</span>
         </div>
-      </div>
-    `;
+      </div>`;
   }).filter(Boolean).join('');
-
   el.innerHTML = cards || `<div style="color:var(--text-secondary);font-size:13px;padding:8px 0">Aucune prise sur la période.</div>`;
 }
+
+function renderIngredientCorrelationCards(periodSleep, ingredientMap) {
+  const el = document.getElementById('ing-correlation');
+  if (!el) return;
+  if (periodSleep.length === 0) { el.innerHTML = ''; return; }
+
+  const avg = arr => arr.reduce((a, b) => a + b, 0) / arr.length;
+  const cards = INGREDIENTS.map(ing => {
+    const withQ = [], withoutQ = [];
+    for (const s of periodSleep) {
+      const m = ingredientMap.get(s.date);
+      const amt = m ? (m.get(ing) || 0) : 0;
+      (amt > 0 ? withQ : withoutQ).push(s.quality);
+    }
+    if (withQ.length === 0) return null;
+    const aw = avg(withQ);
+    const ao = withoutQ.length ? avg(withoutQ) : null;
+    const delta = ao !== null ? aw - ao : null;
+    const deltaColor = delta === null ? '#8892a0' : delta >= 0 ? '#1D9E75' : '#E24B4A';
+    const deltaTxt = delta === null ? '—' : `${delta >= 0 ? '+' : ''}${delta.toFixed(1)}`;
+    const c = INGREDIENT_COLORS[ing] || '#888';
+    return `
+      <div class="meds-corr-card" style="border-left:3px solid ${c}">
+        <div class="meds-corr-name">${ing}</div>
+        <div class="meds-corr-row">
+          <span class="meds-corr-with">Avec : <b>${aw.toFixed(1)}</b> <span class="meds-corr-n">(n=${withQ.length})</span></span>
+          <span class="meds-corr-without">Sans : <b>${ao !== null ? ao.toFixed(1) : '—'}</b> <span class="meds-corr-n">(n=${withoutQ.length})</span></span>
+          <span class="meds-corr-delta" style="color:${deltaColor}">${deltaTxt}</span>
+        </div>
+      </div>`;
+  }).filter(Boolean).join('');
+  el.innerHTML = cards || `<div style="color:var(--text-secondary);font-size:13px;padding:8px 0">Aucune donnée sur la période.</div>`;
+}
+
+// ── Charts ────────────────────────────────────────────────────────────────────
 
 function renderMedsChart(periodSleep, nightMap, colors, baseOptions) {
   const canvas = document.getElementById('meds-chart');
@@ -906,76 +1089,26 @@ function renderMedsChart(periodSleep, nightMap, colors, baseOptions) {
     return d.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' });
   });
 
-  let datasets;
-  let yScales;
+  let datasets, yScales;
 
   if (currentSleepProduct === 'all') {
-    // Stacked bar: one dataset per product
     datasets = SLEEP_PRODUCTS.map(p => ({
       label: p,
-      data: periodSleep.map(s => {
-        const m = nightMap.get(s.date);
-        return m ? (m.get(p) || 0) : 0;
-      }),
+      data: periodSleep.map(s => { const m = nightMap.get(s.date); return m ? (m.get(p) || 0) : 0; }),
       backgroundColor: PRODUCT_COLORS[p],
       borderRadius: 2,
       stack: 'doses',
     })).filter(ds => ds.data.some(v => v > 0));
-
-    yScales = {
-      y: {
-        ...baseOptions.scales.y,
-        stacked: true,
-        beginAtZero: true,
-        title: { display: true, text: 'Doses', color: colors.text },
-      },
-    };
+    yScales = { y: { ...baseOptions.scales.y, stacked: true, beginAtZero: true, title: { display: true, text: 'Doses', color: colors.text } } };
   } else {
-    // Single product + quality overlay
     const p = currentSleepProduct;
-    const doseData = periodSleep.map(s => {
-      const m = nightMap.get(s.date);
-      return m ? (m.get(p) || 0) : 0;
-    });
     datasets = [
-      {
-        type: 'bar',
-        label: `${p} (dose)`,
-        data: doseData,
-        backgroundColor: PRODUCT_COLORS[p],
-        borderRadius: 2,
-        yAxisID: 'y',
-        order: 2,
-      },
-      {
-        type: 'line',
-        label: 'Qualité sommeil',
-        data: periodSleep.map(s => s.quality),
-        borderColor: colors.accent,
-        backgroundColor: 'transparent',
-        borderWidth: 2,
-        pointRadius: 3,
-        pointBackgroundColor: colors.accent,
-        tension: 0.3,
-        yAxisID: 'y1',
-        order: 1,
-      },
+      { type: 'bar',  label: `${p} (dose)`,    data: periodSleep.map(s => { const m = nightMap.get(s.date); return m ? (m.get(p) || 0) : 0; }), backgroundColor: PRODUCT_COLORS[p], borderRadius: 2, yAxisID: 'y', order: 2 },
+      { type: 'line', label: 'Qualité sommeil', data: periodSleep.map(s => s.quality), borderColor: colors.accent, backgroundColor: 'transparent', borderWidth: 2, pointRadius: 3, pointBackgroundColor: colors.accent, tension: 0.3, yAxisID: 'y1', order: 1 },
     ];
     yScales = {
-      y: {
-        ...baseOptions.scales.y,
-        beginAtZero: true,
-        position: 'left',
-        title: { display: true, text: 'Dose', color: PRODUCT_COLORS[p] },
-      },
-      y1: {
-        ...baseOptions.scales.y,
-        position: 'right',
-        min: 0,
-        max: 10,
-        grid: { drawOnChartArea: false },
-        title: { display: true, text: 'Qualité', color: colors.accent },
-      },
+      y:  { ...baseOptions.scales.y, beginAtZero: true, position: 'left',  title: { display: true, text: 'Dose',    color: PRODUCT_COLORS[p] } },
+      y1: { ...baseOptions.scales.y, position: 'right', min: 0, max: 10, grid: { drawOnChartArea: false }, title: { display: true, text: 'Qualité', color: colors.accent } },
     };
   }
 
@@ -984,26 +1117,71 @@ function renderMedsChart(periodSleep, nightMap, colors, baseOptions) {
     data: { labels, datasets },
     options: {
       ...baseOptions,
-      scales: {
-        x: {
-          ...baseOptions.scales.x,
-          stacked: currentSleepProduct === 'all',
-        },
-        ...yScales,
-      },
+      scales: { x: { ...baseOptions.scales.x, stacked: currentSleepProduct === 'all' }, ...yScales },
       plugins: {
-        legend: {
-          display: true,
-          labels: { color: colors.text, usePointStyle: true, font: { size: 10 } },
-        },
+        legend: { display: true, labels: { color: colors.text, usePointStyle: true, font: { size: 10 } } },
+        tooltip: { callbacks: { afterBody: (items) => {
+          const s = periodSleep[items[0]?.dataIndex];
+          return s ? ['───────────', `Qualité : ${s.quality}/10`] : '';
+        } } },
+      },
+    },
+  });
+}
+
+function renderIngredientsChart(periodSleep, ingredientMap, colors, baseOptions) {
+  const canvas = document.getElementById('ing-chart');
+  if (!canvas) return;
+
+  const labels = periodSleep.map(s => {
+    const d = new Date(s.date + 'T00:00:00');
+    return d.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' });
+  });
+
+  let datasets, yScales;
+
+  if (currentIngredient === 'all') {
+    datasets = INGREDIENTS.map(ing => ({
+      label: ing,
+      data: periodSleep.map(s => { const m = ingredientMap.get(s.date); return m ? +(m.get(ing) || 0).toFixed(4) : 0; }),
+      backgroundColor: INGREDIENT_COLORS[ing] || '#888',
+      borderRadius: 2,
+      stack: 'amounts',
+    })).filter(ds => ds.data.some(v => v > 0));
+    yScales = { y: { ...baseOptions.scales.y, stacked: true, beginAtZero: true, title: { display: true, text: 'mg', color: colors.text } } };
+  } else {
+    const ing = currentIngredient;
+    const isUg = UG_INGREDIENTS.has(ing);
+    const c = INGREDIENT_COLORS[ing] || '#888';
+    const rawData = periodSleep.map(s => { const m = ingredientMap.get(s.date); return m ? (m.get(ing) || 0) : 0; });
+    const displayData = isUg ? rawData.map(v => +(v * 1000).toFixed(3)) : rawData.map(v => +v.toFixed(3));
+    datasets = [
+      { type: 'bar',  label: `${ing} (${isUg ? 'µg' : 'mg'})`, data: displayData, backgroundColor: c, borderRadius: 2, yAxisID: 'y', order: 2 },
+      { type: 'line', label: 'Qualité sommeil', data: periodSleep.map(s => s.quality), borderColor: colors.accent, backgroundColor: 'transparent', borderWidth: 2, pointRadius: 3, pointBackgroundColor: colors.accent, tension: 0.3, yAxisID: 'y1', order: 1 },
+    ];
+    yScales = {
+      y:  { ...baseOptions.scales.y, beginAtZero: true, position: 'left',  title: { display: true, text: isUg ? 'µg' : 'mg', color: c } },
+      y1: { ...baseOptions.scales.y, position: 'right', min: 0, max: 10, grid: { drawOnChartArea: false }, title: { display: true, text: 'Qualité', color: colors.accent } },
+    };
+  }
+
+  medsChartInstance = new Chart(canvas.getContext('2d'), {
+    type: 'bar',
+    data: { labels, datasets },
+    options: {
+      ...baseOptions,
+      scales: { x: { ...baseOptions.scales.x, stacked: currentIngredient === 'all' }, ...yScales },
+      plugins: {
+        legend: { display: true, labels: { color: colors.text, usePointStyle: true, font: { size: 10 } } },
         tooltip: {
+          filter: item => item.raw !== 0,
           callbacks: {
-            afterBody: function(items) {
-              const idx = items[0]?.dataIndex;
-              if (idx === undefined) return '';
-              const s = periodSleep[idx];
-              if (!s) return '';
-              return ['───────────', `Qualité : ${s.quality}/10`];
+            label: (item) => currentIngredient !== 'all'
+              ? `${item.dataset.label}: ${item.formattedValue}`
+              : `${item.dataset.label}: ${fmtIngredientAmt(item.dataset.label, item.raw)}`,
+            afterBody: (items) => {
+              const s = periodSleep[items[0]?.dataIndex];
+              return s ? ['───────────', `Qualité : ${s.quality}/10`] : '';
             },
           },
         },
