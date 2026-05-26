@@ -70,14 +70,19 @@ function shiftDateStr(dateStr, days) {
   return `${yy}-${mm}-${dd}`;
 }
 
-// Toute prise du jour D vise la nuit D+1 (cohérent avec sleep.js qui affiche
-// les prises de D-1 comme contexte du sommeil noté le jour D).
-function effectiveNight(intakeDate, _time) {
+// Coupure nuit/jour : avant 06:00 = encore la nuit précédente.
+// Prise du jour D à heure H :
+//   - H < 06:00  → appartient à la nuit D-1→D, stockée comme jour D  (= intakeDate)
+//   - H ≥ 06:00 ou heure inconnue → appartient à la nuit D→D+1, stockée comme D+1
+const NIGHT_CUTOFF = '06:00';
+function effectiveNight(intakeDate, time) {
+  if (time && time < NIGHT_CUTOFF) return intakeDate;
   return shiftDateStr(intakeDate, 1);
 }
 
 let currentSleepPeriod = '3m';
 let currentSleepProduct = 'all';
+let currentSleepQualityPeriod = '3m';
 
 let chartInstance = null;
 let perfChartInstance = null;
@@ -199,6 +204,7 @@ async function renderChart(type) {
 
     } else if (type === 'sleep') {
       area.innerHTML = `
+        <div class="period-buttons" id="sleep-quality-period-buttons"></div>
         <div class="chart-container"><canvas id="main-chart"></canvas></div>
         <div id="moon-icons-row" class="moon-icons-row"></div>
         <div id="chart-empty" class="empty-state hidden">
@@ -215,12 +221,27 @@ async function renderChart(type) {
         getAllSleep(),
         getAllIntakes().catch(() => []),
       ]);
-      const data = sleepData.filter(s => s.quality);
+      const allQualityData = sleepData.filter(s => s.quality);
 
-      if (data.length === 0) {
-        canvas.parentElement.classList.add('hidden');
-        emptyEl.classList.remove('hidden');
-      } else {
+      function applySleepQualityPeriod() {
+        if (chartInstance) { chartInstance.destroy(); chartInstance = null; }
+
+        const data = filterSleepByPeriod(allQualityData, currentSleepQualityPeriod);
+
+        document.querySelectorAll('#sleep-quality-period-buttons .period-btn').forEach(btn => {
+          btn.classList.toggle('active', btn.dataset.period === currentSleepQualityPeriod);
+        });
+
+        if (data.length === 0) {
+          canvas.parentElement.classList.add('hidden');
+          emptyEl.classList.remove('hidden');
+          renderMoonIconsRow([]);
+          renderMoonSection([]);
+          return;
+        }
+        canvas.parentElement.classList.remove('hidden');
+        emptyEl.classList.add('hidden');
+
         const colors = data.map(s =>
           s.quality >= 7 ? chartColors.success :
           s.quality >= 4 ? chartColors.warning :
@@ -249,11 +270,25 @@ async function renderChart(type) {
             },
           },
         });
+
+        renderMoonIconsRow(data);
+        renderMoonSection(data);
       }
 
-      renderMoonIconsRow(data);
+      // Boutons de période
+      const pb = document.getElementById('sleep-quality-period-buttons');
+      pb.innerHTML = ['3m', '6m', 'all'].map(p =>
+        `<button class="period-btn ${p === currentSleepQualityPeriod ? 'active' : ''}" data-period="${p}">${p === 'all' ? 'Tout' : p === '3m' ? '3 mois' : '6 mois'}</button>`
+      ).join('');
+      pb.querySelectorAll('.period-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          currentSleepQualityPeriod = btn.dataset.period;
+          applySleepQualityPeriod();
+        });
+      });
+
+      applySleepQualityPeriod();
       renderSleepMedsSection(sleepData, intakesData, chartColors, baseOptions);
-      renderMoonSection(data);
 
     } else if (type === 'bike') {
       const workouts = await getAllWorkouts();

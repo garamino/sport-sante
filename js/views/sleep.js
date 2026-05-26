@@ -142,9 +142,19 @@ export async function render(container, resetDate = true) {
         }
         const formatIntakes = entries => (entries || []).map(en => `${en.time ? en.time + ' ' : ''}${en.product} ${fmtQty(en.quantity)}`).join(' ; ');
 
-        const header = ['Date', 'Qualité', 'Coucher', 'Réveil', 'Heures dormies', 'Prises de la veille', 'Note'];
+        // Prises attribuées à une nuit D (réveil le jour D) :
+        //   - prises du jour D-1 avec heure ≥ 06:00 (soirée)
+        //   - prises du jour D   avec heure < 06:00  (début de nuit)
+        const NIGHT_CUTOFF = '06:00';
+        const intakesForNight = date => {
+          const prev = addDays(date, -1);
+          const evening = (intakesByDate.get(prev) || []).filter(en => !en.time || en.time >= NIGHT_CUTOFF);
+          const earlyMorn = (intakesByDate.get(date) || []).filter(en => en.time && en.time < NIGHT_CUTOFF);
+          return [...evening, ...earlyMorn].sort((a, b) => (a.time || '').localeCompare(b.time || ''));
+        };
+
+        const header = ['Date', 'Qualité', 'Coucher', 'Réveil', 'Heures dormies', 'Prises de la nuit', 'Note'];
         const rows = all.map(s => {
-          const prev = addDays(s.date, -1);
           const cleanNote = stripMedsFromNote(s.note || '').replace(/[\t\r\n]+/g, ' ');
           return [
             s.date || '',
@@ -152,7 +162,7 @@ export async function render(container, resetDate = true) {
             s.bedtime || '',
             s.wakeTime || '',
             s.hoursSleptHHMM || (s.hoursSlept ? String(s.hoursSlept).replace('.', ',') : ''),
-            formatIntakes(intakesByDate.get(prev)),
+            formatIntakes(intakesForNight(s.date)),
             cleanNote,
           ].join('\t');
         });
