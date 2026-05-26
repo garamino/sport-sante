@@ -80,7 +80,7 @@ export async function render(container, resetDate = true) {
             `).join('')}
           </div>
         `}
-        <a href="#/intakes" class="btn" style="margin-top:8px;display:block;text-align:center;text-decoration:none">Gérer mes prises</a>
+        <a href="#/intakes" class="btn btn-secondary btn-small" style="margin-top:12px;text-decoration:none">⚙ Gérer mes prises</a>
       </div>
 
       ${recent.length > 0 ? `
