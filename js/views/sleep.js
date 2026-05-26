@@ -1,4 +1,4 @@
-import { today, formatDateShort, formatDateFR, addDays, computeHoursSlept, showToast } from '../utils.js';
+import { today, formatDateShort, formatDateFR, addDays, computeHoursSlept, showToast, NIGHT_CUTOFF } from '../utils.js';
 import { getSleep, saveSleep, getRecentSleep, getAllSleep, getIntakes, getAllIntakes } from '../db.js';
 import { stripMedsFromNote } from '../sleep-meds.js';
 
@@ -12,19 +12,18 @@ export async function render(container, resetDate = true) {
 
   try {
     const prevDate = addDays(currentDate, -1);
-    const [existing, recent, prevIntakes] = await Promise.all([
+    const [existing, recent, prevIntakes, todayIntakes] = await Promise.all([
       getSleep(currentDate).catch(() => null),
       getRecentSleep(7).catch(() => []),
       getIntakes(prevDate).catch(() => null),
+      getIntakes(currentDate).catch(() => null),
     ]);
 
-    const prevEntries = (prevIntakes?.entries || []).slice().sort((a, b) => {
-      const ta = a.time || '', tb = b.time || '';
-      if (!ta && !tb) return 0;
-      if (!ta) return 1;
-      if (!tb) return -1;
-      return ta.localeCompare(tb);
-    });
+    // Prises de la nuit = soirée de D-1 (≥ NIGHT_CUTOFF) + début de nuit D (< NIGHT_CUTOFF)
+    const nightEntries = [
+      ...(prevIntakes?.entries  || []).filter(e => !e.time || e.time >= NIGHT_CUTOFF),
+      ...(todayIntakes?.entries || []).filter(e => e.time && e.time < NIGHT_CUTOFF),
+    ].sort((a, b) => (a.time || '').localeCompare(b.time || ''));
 
     container.innerHTML = `
       <div class="date-nav-row">
@@ -64,12 +63,12 @@ export async function render(container, resetDate = true) {
       </div>
 
       <div class="card">
-        <div class="section-title" style="margin-top:0">Prises de la veille — ${formatDateShort(prevDate)}</div>
-        ${prevEntries.length === 0 ? `
+        <div class="section-title" style="margin-top:0">Prises de la nuit — ${formatDateShort(prevDate)}</div>
+        ${nightEntries.length === 0 ? `
           <div style="color:var(--text-secondary);font-size:13px">Aucune prise enregistrée.</div>
         ` : `
           <div>
-            ${prevEntries.map(e => `
+            ${nightEntries.map(e => `
               <div class="intake-item">
                 <div class="intake-item-line">
                   <span class="intake-time">${e.time || '—'}</span>
@@ -142,10 +141,7 @@ export async function render(container, resetDate = true) {
         }
         const formatIntakes = entries => (entries || []).map(en => `${en.time ? en.time + ' ' : ''}${en.product} ${fmtQty(en.quantity)}`).join(' ; ');
 
-        // Prises attribuées à une nuit D (réveil le jour D) :
-        //   - prises du jour D-1 avec heure ≥ 06:00 (soirée)
-        //   - prises du jour D   avec heure < 06:00  (début de nuit)
-        const NIGHT_CUTOFF = '06:00';
+        // Prises attribuées à une nuit D (réveil le jour D) — même règle que l'affichage (NIGHT_CUTOFF)
         const intakesForNight = date => {
           const prev = addDays(date, -1);
           const evening = (intakesByDate.get(prev) || []).filter(en => !en.time || en.time >= NIGHT_CUTOFF);

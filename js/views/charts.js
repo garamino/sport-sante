@@ -1,4 +1,5 @@
 import { getAllWeeklies, getAllSleep, getAllWorkouts, getAllIntakes } from '../db.js';
+import { NIGHT_CUTOFF } from '../utils.js';
 
 const SLEEP_PRODUCTS = [
   'Metasleep',
@@ -70,11 +71,10 @@ function shiftDateStr(dateStr, days) {
   return `${yy}-${mm}-${dd}`;
 }
 
-// Coupure nuit/jour : avant 06:00 = encore la nuit précédente.
 // Prise du jour D à heure H :
-//   - H < 06:00  → appartient à la nuit D-1→D, stockée comme jour D  (= intakeDate)
-//   - H ≥ 06:00 ou heure inconnue → appartient à la nuit D→D+1, stockée comme D+1
-const NIGHT_CUTOFF = '06:00';
+//   - H < NIGHT_CUTOFF → appartient à la nuit D-1→D, stockée comme jour D  (= intakeDate)
+//   - H ≥ NIGHT_CUTOFF ou heure inconnue → appartient à la nuit D→D+1, stockée comme D+1
+// NIGHT_CUTOFF importé depuis utils.js — modifier là-bas pour changer partout.
 function effectiveNight(intakeDate, time) {
   if (time && time < NIGHT_CUTOFF) return intakeDate;
   return shiftDateStr(intakeDate, 1);

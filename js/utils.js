@@ -2,6 +2,10 @@
 function pad(n) { return String(n).padStart(2, '0'); }
 function toLocalDateStr(d) { return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`; }
 
+// Coupure nuit/jour : avant 06:00 = encore la nuit précédente.
+// Modifier ici pour changer le comportement partout (sleep view + graphiques).
+export const NIGHT_CUTOFF = '06:00';
+
 export function today() {
   return toLocalDateStr(new Date());
 }
