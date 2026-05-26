@@ -702,6 +702,7 @@ textarea {
 /* ===== Meds view tabs (Vue produits / Vue composants) ===== */
 .meds-view-tabs {
   display: flex;
+  justify-content: center;
   gap: 2px;
   margin-bottom: 14px;
   border-bottom: 1px solid var(--border);
@@ -744,7 +745,49 @@ textarea {
   font-weight: 700;
   color: var(--text-primary);
   margin-bottom: 4px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
+
+/* Bouton ⓘ + popover composition ingrédient */
+.ing-info-btn {
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  font-size: 11px;
+  cursor: pointer;
+  line-height: 1;
+  padding: 0 2px;
+  border-radius: 50%;
+  transition: color 0.15s;
+  flex-shrink: 0;
+}
+.ing-info-btn:hover { color: var(--accent); }
+
+.ing-info-popover {
+  position: absolute;
+  z-index: 200;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 12px;
+  min-width: 180px;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.4);
+  font-size: 12px;
+  color: var(--text-primary);
+  margin-top: 4px;
+}
+.ing-info-popover-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 3px 0;
+  border-bottom: 1px solid var(--border);
+}
+.ing-info-popover-row:last-child { border-bottom: none; }
+.ing-info-popover-prod { color: var(--text-secondary); }
+.ing-info-popover-amt  { color: var(--text-primary); font-weight: 600; white-space: nowrap; }
 
 .meds-corr-row {
   display: flex;

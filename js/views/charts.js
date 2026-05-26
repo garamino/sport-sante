@@ -1045,6 +1045,18 @@ function renderCorrelationCards(periodSleep, nightMap) {
   el.innerHTML = cards || `<div style="color:var(--text-secondary);font-size:13px;padding:8px 0">Aucune prise sur la période.</div>`;
 }
 
+function ingSourceRows(ing) {
+  // Liste des produits qui contiennent cet ingrédient, avec la quantité pour 1 dose
+  return Object.entries(PRODUCT_COMPOSITIONS)
+    .filter(([, compo]) => compo[ing] !== undefined)
+    .map(([prod, compo]) =>
+      `<div class="ing-info-popover-row">
+        <span class="ing-info-popover-prod">${prod}</span>
+        <span class="ing-info-popover-amt">${fmtIngredientAmt(ing, compo[ing])} / dose</span>
+      </div>`
+    ).join('');
+}
+
 function renderIngredientCorrelationCards(periodSleep, ingredientMap) {
   const el = document.getElementById('ing-correlation');
   if (!el) return;
@@ -1066,8 +1078,11 @@ function renderIngredientCorrelationCards(periodSleep, ingredientMap) {
     const deltaTxt = delta === null ? '—' : `${delta >= 0 ? '+' : ''}${delta.toFixed(1)}`;
     const c = INGREDIENT_COLORS[ing] || '#888';
     return `
-      <div class="meds-corr-card" style="border-left:3px solid ${c}">
-        <div class="meds-corr-name">${ing}</div>
+      <div class="meds-corr-card" style="border-left:3px solid ${c};position:relative">
+        <div class="meds-corr-name">
+          ${ing}
+          <button class="ing-info-btn" data-ing="${ing}" title="Sources de ${ing}">ⓘ</button>
+        </div>
         <div class="meds-corr-row">
           <span class="meds-corr-with">Avec : <b>${aw.toFixed(1)}</b> <span class="meds-corr-n">(n=${withQ.length})</span></span>
           <span class="meds-corr-without">Sans : <b>${ao !== null ? ao.toFixed(1) : '—'}</b> <span class="meds-corr-n">(n=${withoutQ.length})</span></span>
@@ -1076,6 +1091,36 @@ function renderIngredientCorrelationCards(periodSleep, ingredientMap) {
       </div>`;
   }).filter(Boolean).join('');
   el.innerHTML = cards || `<div style="color:var(--text-secondary);font-size:13px;padding:8px 0">Aucune donnée sur la période.</div>`;
+
+  // Popover ⓘ
+  let openPopover = null;
+  el.querySelectorAll('.ing-info-btn').forEach(btn => {
+    btn.addEventListener('click', e => {
+      e.stopPropagation();
+      // Ferme si déjà ouvert sur ce bouton
+      if (openPopover && openPopover.btn === btn) {
+        openPopover.el.remove();
+        openPopover = null;
+        return;
+      }
+      // Ferme l'éventuel précédent
+      openPopover?.el.remove();
+
+      const ing = btn.dataset.ing;
+      const pop = document.createElement('div');
+      pop.className = 'ing-info-popover';
+      pop.innerHTML = ingSourceRows(ing);
+      btn.closest('.meds-corr-card').appendChild(pop);
+      openPopover = { btn, el: pop };
+    });
+  });
+
+  // Clic dehors → ferme
+  document.addEventListener('click', function closeAll() {
+    openPopover?.el.remove();
+    openPopover = null;
+    document.removeEventListener('click', closeAll);
+  });
 }
 
 // ── Charts ────────────────────────────────────────────────────────────────────
