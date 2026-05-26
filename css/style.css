@@ -793,6 +793,109 @@ textarea {
   margin-top: 2px;
 }
 
+.moon-phase-card:hover {
+  background: var(--bg-secondary);
+  border-color: var(--accent);
+  transition: border-color 0.15s, background 0.15s;
+}
+
+/* ===== Moon Phase Modal ===== */
+.moon-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.7);
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity 0.18s ease;
+}
+.moon-modal-overlay--visible {
+  opacity: 1;
+}
+
+.moon-modal {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  width: min(92vw, 400px);
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+  padding: 20px;
+  position: relative;
+  transform: translateY(12px);
+  transition: transform 0.18s ease;
+}
+.moon-modal-overlay--visible .moon-modal {
+  transform: translateY(0);
+}
+
+.moon-modal-close {
+  position: absolute;
+  top: 10px;
+  right: 12px;
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  font-size: 18px;
+  cursor: pointer;
+  line-height: 1;
+  padding: 2px 4px;
+}
+.moon-modal-close:hover { color: var(--text-primary); }
+
+.moon-modal-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+.moon-modal-icon { font-size: 32px; line-height: 1; }
+.moon-modal-title {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.moon-modal-avg {
+  font-size: 13px;
+  color: var(--text-secondary);
+  margin-bottom: 14px;
+}
+.moon-modal-avg b { color: var(--text-primary); }
+
+.moon-modal-list {
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.moon-modal-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 10px;
+  background: var(--bg-card);
+  border-radius: 6px;
+}
+
+.moon-modal-date {
+  font-size: 13px;
+  color: var(--text-primary);
+}
+
+.moon-modal-badge {
+  font-size: 12px;
+  font-weight: 700;
+  color: #fff;
+  padding: 2px 8px;
+  border-radius: 12px;
+  white-space: nowrap;
+}
+
 /* ===== Formula Box ===== */
 .formula-box {
   margin-top: 10px;

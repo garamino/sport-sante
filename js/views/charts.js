@@ -1046,20 +1046,22 @@ function renderMoonSection(data) {
   if (data.length === 0) { section.innerHTML = ''; return; }
 
   const stats = MOON_PHASES.map((p, idx) => {
-    const nights = data.filter(s => getMoonPhase(s.date).phaseIdx === idx);
+    const nights = data.filter(s => getMoonPhase(s.date).phaseIdx === idx)
+                       .sort((a, b) => b.date.localeCompare(a.date)); // récent en premier
     const avg = nights.length
       ? +(nights.reduce((sum, s) => sum + s.quality, 0) / nights.length).toFixed(1)
       : null;
-    return { ...p, avg, n: nights.length };
+    return { ...p, avg, n: nights.length, nights };
   });
 
-  const cards = stats.map(p => {
+  const cards = stats.map((p, idx) => {
     const scoreColor = p.avg === null ? 'var(--text-secondary)'
       : p.avg >= 7 ? '#66bb6a'
       : p.avg >= 4 ? '#ffa726'
       : '#ef5350';
     return `
-      <div class="moon-phase-card">
+      <div class="moon-phase-card" data-moon-idx="${idx}" role="button" tabindex="0"
+           style="cursor:pointer" title="Voir les nuits ${p.label}">
         <div class="moon-phase-icon">${p.icon}</div>
         <div class="moon-phase-name">${p.label}</div>
         <div class="moon-phase-score" style="color:${scoreColor}">${p.avg ?? '—'}</div>
@@ -1072,6 +1074,65 @@ function renderMoonSection(data) {
     <div class="section-title">Lune &amp; qualité du sommeil</div>
     <div class="moon-phase-grid">${cards}</div>
   `;
+
+  section.querySelectorAll('.moon-phase-card').forEach(card => {
+    const open = () => {
+      const idx = parseInt(card.dataset.moonIdx, 10);
+      showMoonPhaseModal(stats[idx]);
+    };
+    card.addEventListener('click', open);
+    card.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') open(); });
+  });
+}
+
+function showMoonPhaseModal({ icon, label, avg, nights }) {
+  // Supprime une éventuelle modale déjà ouverte
+  document.getElementById('moon-modal-overlay')?.remove();
+
+  const qualityColor = q => q >= 7 ? '#66bb6a' : q >= 4 ? '#ffa726' : '#ef5350';
+
+  const rows = nights.length === 0
+    ? `<div style="color:var(--text-secondary);text-align:center;padding:16px">Aucune nuit enregistrée</div>`
+    : nights.map(s => {
+        const d = new Date(s.date + 'T12:00:00');
+        const dateStr = d.toLocaleDateString('fr-FR', { weekday: 'short', day: 'numeric', month: 'long', year: 'numeric' });
+        return `
+          <div class="moon-modal-row">
+            <span class="moon-modal-date">${dateStr}</span>
+            <span class="moon-modal-badge" style="background:${qualityColor(s.quality)}">${s.quality}/10</span>
+          </div>
+        `;
+      }).join('');
+
+  const avgLine = avg !== null
+    ? `<div class="moon-modal-avg">Moyenne : <b>${avg}/10</b> sur ${nights.length} nuit${nights.length !== 1 ? 's' : ''}</div>`
+    : '';
+
+  const overlay = document.createElement('div');
+  overlay.id = 'moon-modal-overlay';
+  overlay.className = 'moon-modal-overlay';
+  overlay.innerHTML = `
+    <div class="moon-modal" role="dialog" aria-modal="true">
+      <button class="moon-modal-close" aria-label="Fermer">✕</button>
+      <div class="moon-modal-header">
+        <span class="moon-modal-icon">${icon}</span>
+        <span class="moon-modal-title">${label}</span>
+      </div>
+      ${avgLine}
+      <div class="moon-modal-list">${rows}</div>
+    </div>
+  `;
+
+  const close = () => overlay.remove();
+  overlay.addEventListener('click', e => { if (e.target === overlay) close(); });
+  overlay.querySelector('.moon-modal-close').addEventListener('click', close);
+  document.addEventListener('keydown', function esc(e) {
+    if (e.key === 'Escape') { close(); document.removeEventListener('keydown', esc); }
+  });
+
+  document.body.appendChild(overlay);
+  // Force reflow pour l'animation
+  requestAnimationFrame(() => overlay.classList.add('moon-modal-overlay--visible'));
 }
 
 function loadScript(src) {
