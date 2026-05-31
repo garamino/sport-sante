@@ -39,10 +39,19 @@ export async function render(container, resetDate = true) {
         <div class="card-title">Pesée du jour</div>
         <div style="display:flex;align-items:center;gap:12px">
           <div class="form-group" style="flex:1;margin-bottom:0">
+            <label style="font-size:12px;color:var(--text-secondary)">Poids</label>
             <input type="number" id="daily-weight" step="0.1" min="40" max="150"
                    placeholder="Ex: 59.5" value="${dayData?.weight || ''}">
           </div>
-          <span style="font-size:14px;color:var(--text-secondary)">kg</span>
+          <span style="font-size:14px;color:var(--text-secondary);align-self:end;padding-bottom:10px">kg</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:12px;margin-top:10px">
+          <div class="form-group" style="flex:1;margin-bottom:0">
+            <label style="font-size:12px;color:var(--text-secondary)">Masse grasse (Fitbit Aria)</label>
+            <input type="number" id="daily-bodyfat" step="0.1" min="3" max="60"
+                   placeholder="Ex: 18.5" value="${dayData?.bodyFat ?? ''}">
+          </div>
+          <span style="font-size:14px;color:var(--text-secondary);align-self:end;padding-bottom:10px">%</span>
         </div>
         <button class="btn btn-success btn-small" id="save-daily-weight" style="margin-top:12px;width:100%">Enregistrer</button>
       </div>
@@ -88,6 +97,8 @@ export async function render(container, resetDate = true) {
     document.getElementById('save-daily-weight').addEventListener('click', async (e) => {
       const btn = e.target;
       const weight = parseFloat(document.getElementById('daily-weight').value);
+      const bodyFatRaw = document.getElementById('daily-bodyfat').value;
+      const bodyFat = bodyFatRaw === '' ? null : parseFloat(bodyFatRaw);
       if (!weight) {
         showToast('Indique ton poids');
         return;
@@ -99,7 +110,7 @@ export async function render(container, resetDate = true) {
       try {
         // Save weight in the workout document for this day
         const existingDay = dayData || {};
-        await saveWorkout(currentDate, { ...existingDay, weight });
+        await saveWorkout(currentDate, { ...existingDay, weight, bodyFat });
 
         // Also update the weekly summary with the latest weight
         const delta = prevWeekly?.weight ? Math.round((weight - prevWeekly.weight) * 10) / 10 : 0;
@@ -107,13 +118,14 @@ export async function render(container, resetDate = true) {
           week: weekNum,
           phase,
           weight,
+          bodyFat,
           deltaWeight: delta,
           musculationDone: muscu.length,
           musculationTotal: 4,
           bikeDone: velo.length,
           bikeTotal: 2,
         });
-        await saveUserProfile({ currentWeight: weight });
+        await saveUserProfile({ currentWeight: weight, ...(bodyFat != null ? { currentBodyFat: bodyFat } : {}) });
 
         showToast('Pesée enregistrée ✓');
         render(container, false);

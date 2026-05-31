@@ -234,26 +234,52 @@ async function renderChart(type) {
         return;
       }
 
+      const hasBodyFat = data.some(w => w.bodyFat != null);
+
       chartInstance = new Chart(canvas.getContext('2d'), {
         type: 'line',
         data: {
           labels: data.map(w => `S${w.week}`),
-          datasets: [{
-            label: 'Poids (kg)',
-            data: data.map(w => w.weight),
-            borderColor: chartColors.accent,
-            backgroundColor: chartColors.accent + '33',
-            fill: true,
-            tension: 0.3,
-            pointRadius: 5,
-            pointBackgroundColor: chartColors.accent,
-          }],
+          datasets: [
+            {
+              label: 'Poids (kg)',
+              data: data.map(w => w.weight),
+              borderColor: chartColors.accent,
+              backgroundColor: chartColors.accent + '33',
+              fill: true,
+              tension: 0.3,
+              pointRadius: 5,
+              pointBackgroundColor: chartColors.accent,
+              yAxisID: 'y',
+            },
+            ...(hasBodyFat ? [{
+              label: 'Masse grasse (%)',
+              data: data.map(w => w.bodyFat ?? null),
+              borderColor: chartColors.warning,
+              backgroundColor: 'transparent',
+              borderDash: [4, 4],
+              tension: 0.3,
+              pointRadius: 4,
+              pointBackgroundColor: chartColors.warning,
+              yAxisID: 'y1',
+              spanGaps: true,
+            }] : []),
+          ],
         },
         options: {
           ...baseOptions,
           scales: {
-            ...baseOptions.scales,
-            y: { ...baseOptions.scales.y, suggestedMin: 55, suggestedMax: 70 },
+            x: baseOptions.scales.x,
+            y: { ...baseOptions.scales.y, position: 'left', suggestedMin: 55, suggestedMax: 70, title: { display: true, text: 'kg', color: chartColors.text } },
+            ...(hasBodyFat ? {
+              y1: {
+                position: 'right',
+                ticks: { color: chartColors.text, font: { size: 11 } },
+                grid: { drawOnChartArea: false },
+                suggestedMin: 10, suggestedMax: 30,
+                title: { display: true, text: '%', color: chartColors.text },
+              },
+            } : {}),
           },
           plugins: {
             legend: { display: true, labels: { color: chartColors.text } },
