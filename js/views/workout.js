@@ -1,5 +1,5 @@
 import { today, formatDateFR, addDays, showToast } from '../utils.js';
-import { getWorkout, saveWorkout, getExerciseHistory, getWorkoutTemplates, getWorkoutTemplate, getExercise } from '../db.js';
+import { getWorkout, saveWorkout, getExerciseHistory, getWorkoutTemplates, getWorkoutTemplate, getExercise, getAllWorkouts } from '../db.js';
 import { EXERCISE_GUIDE, openExerciseGuide } from '../exercise-guide.js';
 import { importLatestCyclingActivity } from '../strava.js';
 
@@ -13,14 +13,18 @@ export async function render(container, resetDate = true) {
     const existing = await getWorkout(currentDate);
 
     container.innerHTML = `
-      <div class="date-nav">
-        <button id="prev-day">‹</button>
-        <span class="current-date">${formatDateFR(currentDate)}</span>
-        <button id="next-day">›</button>
-        <input type="date" id="date-picker" value="${currentDate}" class="date-picker-hidden">
-        <button id="open-calendar" class="date-nav-calendar" title="Choisir une date">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/>
+      <div class="date-nav-row">
+        <div class="date-nav" style="margin-bottom:0">
+          <button id="prev-day">‹</button>
+          <span class="current-date">${formatDateFR(currentDate)}</span>
+          <button id="next-day">›</button>
+        </div>
+        <button class="btn-icon" id="open-calendar" title="Calendrier">
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
+            <rect x="1" y="3" width="14" height="12" rx="2"/>
+            <line x1="1" y1="7" x2="15" y2="7"/>
+            <line x1="5" y1="1" x2="5" y2="5"/>
+            <line x1="11" y1="1" x2="11" y2="5"/>
           </svg>
         </button>
       </div>
@@ -38,10 +42,74 @@ export async function render(container, resetDate = true) {
       render(container, false);
     });
 
-    const datePicker = document.getElementById('date-picker');
-    document.getElementById('open-calendar').addEventListener('click', () => datePicker.showPicker());
-    datePicker.addEventListener('change', () => {
-      if (datePicker.value) { currentDate = datePicker.value; render(container, false); }
+    // Calendrier modal
+    const MONTHS_FR = ['Janvier','Février','Mars','Avril','Mai','Juin','Juillet','Août','Septembre','Octobre','Novembre','Décembre'];
+    const DAYS_FR = ['L','M','M','J','V','S','D'];
+
+    document.getElementById('open-calendar').addEventListener('click', async e => {
+      e.stopPropagation();
+      let calModal = document.getElementById('workout-cal-modal');
+      if (calModal) { calModal.remove(); return; }
+
+      let calYear = parseInt(currentDate.split('-')[0]);
+      let calMonth = parseInt(currentDate.split('-')[1]) - 1;
+
+      calModal = document.createElement('div');
+      calModal.id = 'workout-cal-modal';
+      calModal.className = 'sleep-cal-modal';
+      calModal.innerHTML = `<div class="sleep-cal-card"><div class="sleep-cal-loading">Chargement…</div></div>`;
+      document.body.appendChild(calModal);
+      calModal.addEventListener('click', ev => { if (ev.target === calModal) { calModal.remove(); } });
+
+      const all = await getAllWorkouts().catch(() => []);
+      const workoutDates = new Set(all.map(w => w.date));
+      const todayStr = today();
+
+      function drawCal() {
+        const modal = document.getElementById('workout-cal-modal');
+        if (!modal) return;
+        const firstDay = new Date(calYear, calMonth, 1);
+        const daysInMonth = new Date(calYear, calMonth + 1, 0).getDate();
+        const startDow = (firstDay.getDay() + 6) % 7;
+
+        let cells = '';
+        for (let i = 0; i < startDow; i++) cells += `<div class="sleep-cal-cell sleep-cal-empty"></div>`;
+        for (let d = 1; d <= daysInMonth; d++) {
+          const ds = `${calYear}-${String(calMonth + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+          cells += `<div class="sleep-cal-cell${ds === todayStr ? ' is-today' : ''}${ds === currentDate ? ' is-selected' : ''}" data-date="${ds}">
+            <span class="sleep-cal-daynum">${d}</span>
+            ${workoutDates.has(ds) ? `<span class="sleep-cal-q q-good" style="font-size:8px">●</span>` : ''}
+          </div>`;
+        }
+
+        modal.querySelector('.sleep-cal-card').innerHTML = `
+          <div class="sleep-cal-header">
+            <button id="wcal-prev">‹</button>
+            <span>${MONTHS_FR[calMonth]} ${calYear}</span>
+            <button id="wcal-next">›</button>
+          </div>
+          <div class="sleep-cal-dow">${DAYS_FR.map(l => `<div>${l}</div>`).join('')}</div>
+          <div class="sleep-cal-grid">${cells}</div>
+        `;
+
+        document.getElementById('wcal-prev').addEventListener('click', ev => {
+          ev.stopPropagation();
+          calMonth--; if (calMonth < 0) { calMonth = 11; calYear--; } drawCal();
+        });
+        document.getElementById('wcal-next').addEventListener('click', ev => {
+          ev.stopPropagation();
+          calMonth++; if (calMonth > 11) { calMonth = 0; calYear++; } drawCal();
+        });
+        modal.querySelector('.sleep-cal-grid').addEventListener('click', ev => {
+          const cell = ev.target.closest('[data-date]');
+          if (!cell) return;
+          currentDate = cell.dataset.date;
+          modal.remove();
+          render(container, false);
+        });
+      }
+
+      drawCal();
     });
 
     await renderWorkoutBody(container.querySelector('#workout-body'), existing);

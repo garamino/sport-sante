@@ -32,6 +32,14 @@ export async function render(container, resetDate = true) {
           <span class="current-date">${formatDateFR(currentDate)}</span>
           <button id="sleep-next">›</button>
         </div>
+        <button class="btn-icon" id="sleep-cal" title="Calendrier">
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
+            <rect x="1" y="3" width="14" height="12" rx="2"/>
+            <line x1="1" y1="7" x2="15" y2="7"/>
+            <line x1="5" y1="1" x2="5" y2="5"/>
+            <line x1="11" y1="1" x2="11" y2="5"/>
+          </svg>
+        </button>
         <button class="btn-icon" id="export-sleep" title="Exporter (TSV)">⤓</button>
       </div>
 
@@ -49,8 +57,11 @@ export async function render(container, resetDate = true) {
           <input type="text" id="sleep-hours" placeholder="Auto-calculé (HH:MM)"
                  value="${existing?.hoursSleptHHMM || ''}">
         </div>
-        <div class="form-group">
-          <label>Qualité (1-10)</label>
+        <div class="form-group" style="position:relative">
+          <label style="display:flex;align-items:center;gap:4px">
+            Qualité (1-10)
+            <button class="ing-info-btn" id="quality-info-btn" type="button">ⓘ</button>
+          </label>
           <input type="range" class="quality-slider" id="sleep-quality" min="1" max="10" value="${existing?.quality || 5}">
           <div class="quality-display" id="quality-display">${existing?.quality || 5}</div>
         </div>
@@ -125,6 +136,116 @@ export async function render(container, resetDate = true) {
     const display = document.getElementById('quality-display');
     slider.addEventListener('input', () => {
       display.textContent = slider.value;
+    });
+
+    // Popover ⓘ grille de cotation
+    const qualityInfoBtn = document.getElementById('quality-info-btn');
+    let qualityPopover = null;
+    qualityInfoBtn.addEventListener('click', e => {
+      e.stopPropagation();
+      if (qualityPopover) { qualityPopover.remove(); qualityPopover = null; return; }
+      const pop = document.createElement('div');
+      pop.className = 'quality-info-popover';
+      pop.innerHTML = `
+        <table>
+          <tr><td>10</td><td>&gt; 8h30 d'une traite*</td></tr>
+          <tr><td>9</td><td>8h+ d'une traite*</td></tr>
+          <tr><td>8</td><td>6h45+ d'une traite*</td></tr>
+          <tr><td>7</td><td>6h d'une traite · 6h45+ avec micro-réveils</td></tr>
+          <tr><td>6</td><td>6h + 2-3 micro-réveils · 6h45+ avec gros creux</td></tr>
+          <tr><td>5</td><td>5-6h + creux &gt; 45min · 6h + réveils fréquents</td></tr>
+          <tr><td>4</td><td>4-5h cumulé + grosses périodes d'éveil</td></tr>
+          <tr><td>3</td><td>3-4h cumulé + grosses périodes d'éveil</td></tr>
+          <tr><td>2</td><td>1h30-3h cumulé</td></tr>
+          <tr><td>1</td><td>Nuit blanche ou &lt; 1h30</td></tr>
+        </table>
+        <div class="quality-info-note">* ou 1-2 micro-réveils avec rendormissement &lt; 3 min</div>
+      `;
+      qualityInfoBtn.closest('.form-group').appendChild(pop);
+      qualityPopover = pop;
+    });
+    container.addEventListener('click', e => {
+      if (qualityPopover && !e.target.closest('.quality-info-popover') && e.target.id !== 'quality-info-btn') {
+        qualityPopover.remove();
+        qualityPopover = null;
+      }
+    });
+
+    // === Calendrier modal ===
+    const MONTHS_FR = ['Janvier','Février','Mars','Avril','Mai','Juin','Juillet','Août','Septembre','Octobre','Novembre','Décembre'];
+    const DAYS_FR = ['L','M','M','J','V','S','D'];
+
+    document.getElementById('sleep-cal').addEventListener('click', async e => {
+      e.stopPropagation();
+      let calModal = document.getElementById('sleep-cal-modal');
+      if (calModal) { calModal.remove(); return; }
+
+      let calYear = parseInt(currentDate.split('-')[0]);
+      let calMonth = parseInt(currentDate.split('-')[1]) - 1;
+
+      calModal = document.createElement('div');
+      calModal.id = 'sleep-cal-modal';
+      calModal.className = 'sleep-cal-modal';
+      calModal.innerHTML = `<div class="sleep-cal-card"><div class="sleep-cal-loading">Chargement…</div></div>`;
+      document.body.appendChild(calModal);
+      calModal.addEventListener('click', ev => { if (ev.target === calModal) { calModal.remove(); } });
+
+      const all = await getAllSleep().catch(() => []);
+      const qualityMap = new Map(all.map(s => [s.date, s.quality]));
+      const todayStr = today();
+
+      function drawCal() {
+        const modal = document.getElementById('sleep-cal-modal');
+        if (!modal) return;
+        const firstDay = new Date(calYear, calMonth, 1);
+        const daysInMonth = new Date(calYear, calMonth + 1, 0).getDate();
+        const startDow = (firstDay.getDay() + 6) % 7;
+
+        let cells = '';
+        for (let i = 0; i < startDow; i++) cells += `<div class="sleep-cal-cell sleep-cal-empty"></div>`;
+        for (let d = 1; d <= daysInMonth; d++) {
+          const ds = `${calYear}-${String(calMonth + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+          const q = qualityMap.get(ds);
+          const qClass = q >= 7 ? 'q-good' : q >= 4 ? 'q-ok' : q ? 'q-bad' : '';
+          cells += `<div class="sleep-cal-cell${ds === todayStr ? ' is-today' : ''}${ds === currentDate ? ' is-selected' : ''}" data-date="${ds}">
+            <span class="sleep-cal-daynum">${d}</span>
+            ${q != null ? `<span class="sleep-cal-q ${qClass}">${q}</span>` : ''}
+          </div>`;
+        }
+
+        modal.querySelector('.sleep-cal-card').innerHTML = `
+          <div class="sleep-cal-header">
+            <button id="cal-prev">‹</button>
+            <span>${MONTHS_FR[calMonth]} ${calYear}</span>
+            <button id="cal-next">›</button>
+          </div>
+          <div class="sleep-cal-dow">${DAYS_FR.map(l => `<div>${l}</div>`).join('')}</div>
+          <div class="sleep-cal-grid">${cells}</div>
+          <div class="sleep-cal-legend">
+            <span class="leg-good">■ 7-10</span>
+            <span class="leg-ok">■ 4-6</span>
+            <span class="leg-bad">■ 1-3</span>
+          </div>
+        `;
+
+        document.getElementById('cal-prev').addEventListener('click', ev => {
+          ev.stopPropagation();
+          calMonth--; if (calMonth < 0) { calMonth = 11; calYear--; } drawCal();
+        });
+        document.getElementById('cal-next').addEventListener('click', ev => {
+          ev.stopPropagation();
+          calMonth++; if (calMonth > 11) { calMonth = 0; calYear++; } drawCal();
+        });
+        modal.querySelector('.sleep-cal-grid').addEventListener('click', ev => {
+          const cell = ev.target.closest('[data-date]');
+          if (!cell) return;
+          currentDate = cell.dataset.date;
+          modal.remove();
+          render(container, false);
+        });
+      }
+
+      drawCal();
     });
 
     // Export TSV (toutes les nuits + prises de la veille)

@@ -789,6 +789,128 @@ textarea {
 .ing-info-popover-prod { color: var(--text-secondary); }
 .ing-info-popover-amt  { color: var(--text-primary); font-weight: 600; white-space: nowrap; }
 
+/* Popover grille cotation sommeil */
+.quality-info-popover {
+  position: absolute;
+  z-index: 200;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 12px;
+  width: 290px;
+  max-width: calc(100vw - 40px);
+  box-shadow: 0 4px 16px rgba(0,0,0,0.4);
+  font-size: 12px;
+  color: var(--text-primary);
+  margin-top: 4px;
+}
+.quality-info-popover table { width: 100%; border-collapse: collapse; }
+.quality-info-popover td { padding: 3px 0; vertical-align: top; }
+.quality-info-popover td:first-child {
+  font-weight: 700;
+  color: var(--accent);
+  width: 22px;
+  padding-right: 8px;
+}
+.quality-info-popover tr { border-bottom: 1px solid rgba(255,255,255,0.06); }
+.quality-info-popover tr:last-child { border-bottom: none; }
+.quality-info-note {
+  margin-top: 8px;
+  padding-top: 6px;
+  border-top: 1px solid var(--border);
+  font-size: 10px;
+  color: var(--text-secondary);
+  font-style: italic;
+}
+
+/* === Calendrier sommeil modal === */
+.sleep-cal-modal {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.65);
+  z-index: 300;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+}
+.sleep-cal-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 16px;
+  width: 100%;
+  max-width: 320px;
+}
+.sleep-cal-loading {
+  text-align: center;
+  padding: 24px;
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+.sleep-cal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-weight: 600;
+  font-size: 15px;
+  margin-bottom: 12px;
+}
+.sleep-cal-header button {
+  background: none;
+  border: none;
+  color: var(--text-primary);
+  font-size: 20px;
+  cursor: pointer;
+  padding: 2px 8px;
+  border-radius: 4px;
+  line-height: 1;
+}
+.sleep-cal-header button:hover { color: var(--accent); }
+.sleep-cal-dow {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  text-align: center;
+  font-size: 11px;
+  color: var(--text-secondary);
+  margin-bottom: 4px;
+}
+.sleep-cal-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 3px;
+}
+.sleep-cal-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  aspect-ratio: 1;
+  border-radius: 6px;
+  cursor: pointer;
+  border: 1px solid transparent;
+  transition: background 0.12s;
+}
+.sleep-cal-cell.sleep-cal-empty { cursor: default; }
+.sleep-cal-cell:not(.sleep-cal-empty):hover { background: var(--bg-secondary); }
+.sleep-cal-cell.is-today { border-color: var(--accent); }
+.sleep-cal-cell.is-selected { background: var(--bg-secondary); }
+.sleep-cal-daynum { font-size: 11px; color: var(--text-primary); line-height: 1; }
+.sleep-cal-q { font-size: 10px; font-weight: 700; line-height: 1; margin-top: 1px; }
+.sleep-cal-q.q-good { color: var(--success); }
+.sleep-cal-q.q-ok  { color: #ffa726; }
+.sleep-cal-q.q-bad { color: var(--danger); }
+.sleep-cal-legend {
+  display: flex;
+  justify-content: center;
+  gap: 14px;
+  margin-top: 12px;
+  font-size: 11px;
+}
+.sleep-cal-legend .leg-good { color: var(--success); }
+.sleep-cal-legend .leg-ok  { color: #ffa726; }
+.sleep-cal-legend .leg-bad { color: var(--danger); }
+
 .meds-corr-row {
   display: flex;
   flex-wrap: wrap;
@@ -1067,10 +1189,10 @@ textarea {
 
 /* ===== Date Picker ===== */
 .date-nav {
-  display: flex;
+  display: grid;
+  grid-template-columns: 36px 1fr 36px;
   align-items: center;
-  justify-content: center;
-  gap: 16px;
+  gap: 8px;
   margin-bottom: 16px;
 }
 
@@ -1167,6 +1289,7 @@ textarea {
 .date-nav .current-date {
   font-size: 15px;
   font-weight: 600;
+  text-align: center;
 }
 
 .date-nav-calendar {

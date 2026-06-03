@@ -53,6 +53,12 @@ export async function render(container, resetDate = true) {
           </div>
           <span style="font-size:14px;color:var(--text-secondary);align-self:end;padding-bottom:10px">%</span>
         </div>
+        <div style="display:flex;align-items:center;gap:12px;margin-top:10px">
+          <div class="form-group" style="flex:1;margin-bottom:0">
+            <label style="font-size:12px;color:var(--text-secondary)">Heure de pesée</label>
+            <input type="time" id="daily-weight-time" value="${dayData?.weightTime || ''}">
+          </div>
+        </div>
         <button class="btn btn-success btn-small" id="save-daily-weight" style="margin-top:12px;width:100%">Enregistrer</button>
       </div>
 
@@ -99,6 +105,7 @@ export async function render(container, resetDate = true) {
       const weight = parseFloat(document.getElementById('daily-weight').value);
       const bodyFatRaw = document.getElementById('daily-bodyfat').value;
       const bodyFat = bodyFatRaw === '' ? null : parseFloat(bodyFatRaw);
+      const weightTime = document.getElementById('daily-weight-time').value || null;
       if (!weight) {
         showToast('Indique ton poids');
         return;
@@ -110,7 +117,7 @@ export async function render(container, resetDate = true) {
       try {
         // Save weight in the workout document for this day
         const existingDay = dayData || {};
-        await saveWorkout(currentDate, { ...existingDay, weight, bodyFat });
+        await saveWorkout(currentDate, { ...existingDay, weight, bodyFat, weightTime });
 
         // Also update the weekly summary with the latest weight
         const delta = prevWeekly?.weight ? Math.round((weight - prevWeekly.weight) * 10) / 10 : 0;
