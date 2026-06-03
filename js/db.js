@@ -137,6 +137,12 @@ export async function getAllWeeklies() {
   return snap.docs.map(d => d.data());
 }
 
+export async function getLastWeeklies(count = 2) {
+  const q = query(userCollection('weeklies'), orderBy('week', 'desc'), limit(count));
+  const snap = await getDocs(q);
+  return snap.docs.map(d => d.data()).reverse();
+}
+
 // === Coach Settings ===
 export async function saveCoachWindow(days) {
   await setDoc(userDoc('settings/coachWindow'), { days, savedAt: Timestamp.now() });
