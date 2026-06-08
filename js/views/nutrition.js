@@ -380,7 +380,8 @@ Maximum 5 questions. Ne demande pas ce que tu as déjà. Questions pertinentes u
   });
   if (!res.ok) throw new Error(`Gemini ${res.status}`);
   const data = await res.json();
-  const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+  const parts = data.candidates?.[0]?.content?.parts || [];
+  const text = parts.filter(p => !p.thought).map(p => p.text || '').join('');
   const match = text.match(/\[[\s\S]*\]/);
   if (!match) throw new Error('Réponse inattendue de Gemini');
   return JSON.parse(match[0]);
@@ -501,7 +502,8 @@ Valeurs entières. Explication en français, concise. 3 tips pratiques et action
   });
   if (!res.ok) throw new Error(`Gemini ${res.status}`);
   const data = await res.json();
-  const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+  const parts = data.candidates?.[0]?.content?.parts || [];
+  const text = parts.filter(p => !p.thought).map(p => p.text || '').join('');
   const match = text.match(/\{[\s\S]*\}/);
   if (!match) throw new Error('Réponse inattendue de Gemini');
   return JSON.parse(match[0]);
@@ -906,7 +908,8 @@ Règles : utilise "g" ou "ml" comme unit. Maximum 8 aliments. Valeurs réalistes
     }
 
     const data = await res.json();
-    const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+    const parts = data.candidates?.[0]?.content?.parts || [];
+    const text = parts.filter(p => !p.thought).map(p => p.text || '').join('');
     const match = text.match(/\[[\s\S]*\]/);
     if (!match) throw new Error('Réponse inattendue de Gemini');
     return JSON.parse(match[0]);
