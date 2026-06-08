@@ -355,28 +355,31 @@ async function openGoalsModal() {
   }
 }
 
-// Extrait un objet/tableau JSON depuis la réponse Gemini (gère les blocs markdown et le thinking)
+// Parse la réponse Gemini — fonctionne en mode JSON natif (responseMimeType: application/json)
+// et en mode texte libre (fallback regex + strip markdown)
 function _extractGeminiJSON(data, type = 'object') {
   const candidates = data.candidates;
   if (!candidates?.length) {
     const reason = data.promptFeedback?.blockReason;
-    console.error('[Gemini] Pas de candidates. Réponse complète :', JSON.stringify(data));
-    throw new Error(reason ? `Gemini a bloqué la requête (${reason})` : 'Réponse vide de Gemini (pas de candidates)');
+    console.error('[Gemini] Pas de candidates :', JSON.stringify(data));
+    throw new Error(reason ? `Gemini a bloqué la requête (${reason})` : 'Réponse vide de Gemini');
   }
   const finishReason = candidates[0]?.finishReason;
   const parts = candidates[0]?.content?.parts || [];
-  // Préférer les parts non-thinking ; si tout est thinking, prendre quand même
   const textParts = parts.filter(p => !p.thought);
-  const text = (textParts.length ? textParts : parts).map(p => p.text || '').join('');
-  // Strip markdown code fences (```json ... ``` ou ``` ... ```)
+  const text = (textParts.length ? textParts : parts).map(p => p.text || '').join('').trim();
+
+  // Essai direct (mode JSON natif — texte déjà valide)
+  try { return JSON.parse(text); } catch {}
+
+  // Fallback : strip markdown + regex
   const stripped = text.replace(/```(?:json)?\s*([\s\S]*?)```/g, '$1').trim();
   const source = stripped || text;
   const pattern = type === 'array' ? /\[[\s\S]*\]/ : /\{[\s\S]*\}/;
   const match = source.match(pattern);
   if (!match) {
-    console.error('[Gemini] Impossible d\'extraire le JSON. finishReason:', finishReason, '| Texte brut :', text);
-    const preview = text.slice(0, 120).replace(/\n/g, ' ') || '(vide)';
-    throw new Error(`Réponse inattendue de Gemini [${finishReason || '?'}] : "${preview}"`);
+    console.error('[Gemini] Aucun JSON trouvé. finishReason:', finishReason, '| Texte :', text);
+    throw new Error(`Réponse inattendue de Gemini [${finishReason || '?'}] : "${text.slice(0, 120).replace(/\n/g, ' ') || '(vide)'}"`);
   }
   try {
     return JSON.parse(match[0]);
@@ -406,7 +409,7 @@ Réponds UNIQUEMENT avec un tableau JSON valide, sans aucun texte autour :
 
 Types : "choice" (boutons), "number" (saisie numérique + unité).
 Maximum 5 questions. Ne demande pas ce que tu as déjà. Questions pertinentes uniquement.` }] }],
-      generationConfig: { temperature: 0.2, maxOutputTokens: 2048},
+      generationConfig: { temperature: 0.2, maxOutputTokens: 2048, responseMimeType: 'application/json' },
     }),
   });
   if (!res.ok) throw new Error(`Gemini ${res.status}`);
@@ -528,7 +531,7 @@ Réponds UNIQUEMENT avec un objet JSON valide, sans aucun texte autour :
 {"kcal":2800,"prot":175,"carbs":320,"fats":85,"explanation":"2-3 phrases justifiant les valeurs","tips":["Conseil pratique 1","Conseil pratique 2","Conseil pratique 3"]}
 
 Valeurs entières. Explication en français, concise. 3 tips pratiques et actionnables.` }] }],
-      generationConfig: { temperature: 0.1, maxOutputTokens: 2048},
+      generationConfig: { temperature: 0.1, maxOutputTokens: 2048, responseMimeType: 'application/json' },
     }),
   });
   if (!res.ok) throw new Error(`Gemini ${res.status}`);
@@ -924,7 +927,7 @@ Règles : utilise "g" ou "ml" comme unit. Maximum 8 aliments. Valeurs réalistes
             },
           ],
         }],
-        generationConfig: { temperature: 0.1, maxOutputTokens: 2048},
+        generationConfig: { temperature: 0.1, maxOutputTokens: 2048, responseMimeType: 'application/json' },
       }),
     });
 
