@@ -1616,6 +1616,8 @@ textarea {
   padding: 14px 16px;
   position: relative;
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+  max-height: calc(100dvh - var(--nav-height) - var(--header-height) - 24px);
+  overflow-y: auto;
 }
 
 .coach-close {

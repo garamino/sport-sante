@@ -410,7 +410,7 @@ exports.getCoachAdvice = onCall(
           });
           const summaryResponse = await summaryModel.generateContent({
             contents: [{ role: "user", parts: [{ text: summaryParts.join("\n") }] }],
-            generationConfig: { maxOutputTokens: 300, temperature: 0.2 },
+            generationConfig: { maxOutputTokens: 2048, temperature: 0.2 },
           });
 
           const summaryText = summaryResponse.response.text();
@@ -454,10 +454,16 @@ exports.getCoachAdvice = onCall(
       });
       const response = await coachModel.generateContent({
         contents: [{ role: "user", parts: [{ text: promptMessage }] }],
-        generationConfig: { maxOutputTokens: 400, temperature: 0.3 },
+        generationConfig: { maxOutputTokens: 8192, temperature: 0.3 },
       });
 
+      const candidate = response.response.candidates?.[0];
+      const finishReason = candidate?.finishReason;
+      const usage = response.response.usageMetadata;
+      console.log(`[Coach] finishReason: ${finishReason} | tokens: in=${usage?.promptTokenCount} out=${usage?.candidatesTokenCount} thinking=${usage?.thoughtsTokenCount ?? 'n/a'}`);
+
       const advice = response.response.text();
+      console.log(`[Coach] advice length: ${advice?.length} chars`);
 
       // 9. Update usage counter
       currentCount++;
@@ -540,7 +546,7 @@ Réponds en français. Sois factuel, pas de conseil médical.`,
             { text: `Extrais les données de ce document (${typeLabels[type] || "document médical"}, date: ${date}). Résume de manière structurée.` },
           ],
         }],
-        generationConfig: { maxOutputTokens: 600 },
+        generationConfig: { maxOutputTokens: 2048 },
       });
 
       const summary = response.response.text();
