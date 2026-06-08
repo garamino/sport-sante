@@ -401,7 +401,7 @@ Réponds UNIQUEMENT avec un tableau JSON valide, sans aucun texte autour :
 
 Types : "choice" (boutons), "number" (saisie numérique + unité).
 Maximum 5 questions. Ne demande pas ce que tu as déjà. Questions pertinentes uniquement.` }] }],
-      generationConfig: { temperature: 0.2, maxOutputTokens: 1024 },
+      generationConfig: { temperature: 0.2, maxOutputTokens: 2048, thinkingConfig: { thinkingBudget: 0 } },
     }),
   });
   if (!res.ok) throw new Error(`Gemini ${res.status}`);
@@ -518,7 +518,7 @@ Réponds UNIQUEMENT avec un objet JSON valide, sans aucun texte autour :
 {"kcal":2800,"prot":175,"carbs":320,"fats":85,"explanation":"2-3 phrases justifiant les valeurs","tips":["Conseil pratique 1","Conseil pratique 2","Conseil pratique 3"]}
 
 Valeurs entières. Explication en français, concise. 3 tips pratiques et actionnables.` }] }],
-      generationConfig: { temperature: 0.1, maxOutputTokens: 1024 },
+      generationConfig: { temperature: 0.1, maxOutputTokens: 2048, thinkingConfig: { thinkingBudget: 0 } },
     }),
   });
   if (!res.ok) throw new Error(`Gemini ${res.status}`);
@@ -914,7 +914,7 @@ Règles : utilise "g" ou "ml" comme unit. Maximum 8 aliments. Valeurs réalistes
             },
           ],
         }],
-        generationConfig: { temperature: 0.1, maxOutputTokens: 1024 },
+        generationConfig: { temperature: 0.1, maxOutputTokens: 2048, thinkingConfig: { thinkingBudget: 0 } },
       }),
     });
 
