@@ -1,6 +1,6 @@
 import { today, formatDateFR, addDays, showToast } from '../utils.js';
 import { getWorkout, saveWorkout, getExerciseHistory, getWorkoutTemplates, getWorkoutTemplate, getExercise, getAllWorkouts } from '../db.js';
-import { EXERCISE_GUIDE, openExerciseGuide } from '../exercise-guide.js';
+import { getGuideKey, openExerciseGuide } from '../exercise-guide.js';
 import { importLatestCyclingActivity } from '../strava.js';
 
 let currentDate = null;
@@ -475,7 +475,7 @@ function renderMuscu(exercises, existing) {
           <div class="exercise-info">
             <div class="exercise-name">
               ${ex.name}${isSkipped ? '<span class="skipped-badge">Pas fait</span>' : ''}
-              ${EXERCISE_GUIDE[ex.id] ? `<button class="exercise-guide-btn" data-exercise-id="${ex.id}" title="Comment faire">
+              ${getGuideKey(ex) ? `<button class="exercise-guide-btn" data-exercise-id="${getGuideKey(ex)}" title="Comment faire">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
                   <circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/>
                 </svg>

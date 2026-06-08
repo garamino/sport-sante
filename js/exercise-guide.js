@@ -309,6 +309,39 @@ export const EXERCISE_GUIDE = {
   },
 };
 
+// Mapping nom d'exercice → clé du guide (pour les exercices Firestore qui ont des IDs auto-générés)
+const GUIDE_BY_NAME = {
+  'Pompes classiques':                    'pompes-classiques',
+  'Pompes inclinées (pieds sur chaise)':  'pompes-inclinees',
+  'Dips entre deux chaises':              'dips-chaises',
+  'Pompes serrées':                       'pompes-serrees',
+  'Pompes diamant':                       'pompes-diamant',
+  'Rowing haltères un bras':              'rowing-un-bras',
+  'Rowing penché haltères (2 bras)':      'rowing-penche',
+  'Curl biceps haltères':                 'curl-biceps',
+  'Curl marteau':                         'curl-marteau',
+  'Superman (lombaires)':                 'superman',
+  'Squats':                               'squats',
+  'Fentes avant':                         'fentes-avant',
+  'Pont fessier':                         'pont-fessier',
+  'Squat sauté':                          'squat-saute',
+  'Mollets debout':                       'mollets-debout',
+  'Pompes pike (épaules)':                'pompes-pike',
+  'Élévations latérales haltères':        'elevations-laterales',
+  'Gainage planche':                      'gainage-planche',
+  'Crunchs':                              'crunchs',
+  'Relevés de jambes':                    'releves-jambes',
+  'Rotation russe':                       'rotation-russe',
+  'Burpees':                              'burpees',
+  'Pompes explosives':                    'pompes-explosives',
+};
+
+// Retourne la clé guide pour un exercice (fonctionne avec ID slug ou ID Firestore)
+export function getGuideKey(ex) {
+  if (!ex) return null;
+  return EXERCISE_GUIDE[ex.id] ? ex.id : (GUIDE_BY_NAME[ex.name] || null);
+}
+
 // Ouvre la modale guide pour un exercice donné
 export function openExerciseGuide(exerciseId) {
   const guide = EXERCISE_GUIDE[exerciseId];
