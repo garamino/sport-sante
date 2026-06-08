@@ -1,5 +1,5 @@
 import { today, formatDateFR, getDayOfWeek, addDays } from '../utils.js';
-import { getUserProfile, getWorkout, getSleep, getRecentSleep, getLastWeeklies } from '../db.js';
+import { getUserProfile, getWorkout, getSleep, getRecentSleep, getLastWeeklies, getNutrition, getNutritionGoals } from '../db.js';
 import { showCoachAdvice, openCoachHistory, openCoachNotesModal } from '../coach.js';
 
 function getWeekDates(todayStr) {
@@ -56,12 +56,14 @@ export async function render(container) {
     const weekDates = getWeekDates(todayStr);
     const mondayStr = weekDates[0];
 
-    const [profile, workout, sleep, recentSleep, lastWeeklies, ...weekWorkouts] = await Promise.all([
+    const [profile, workout, sleep, recentSleep, lastWeeklies, nutData, nutGoals, ...weekWorkouts] = await Promise.all([
       getUserProfile().catch(() => null),
       getWorkout(todayStr).catch(() => null),
       getSleep(todayStr).catch(() => null),
       getRecentSleep(7).catch(() => []),
       getLastWeeklies(3).catch(() => []),
+      getNutrition(todayStr).catch(() => null),
+      getNutritionGoals().catch(() => null),
       ...weekDates.map(d => getWorkout(d).catch(() => null)),
     ]);
 
@@ -77,6 +79,19 @@ export async function render(container) {
     const deltaColor = deltaWeight === 0 ? 'var(--text-secondary)' : deltaWeight > 0 ? 'var(--success)' : 'var(--danger)';
 
     const weekNarrative = buildWeekNarrative(weekWorkouts, recentSleep, mondayStr);
+
+    // Nutrition today
+    const NUT_DEFAULTS = { kcal: 2500, prot: 160, carbs: 300, fats: 80 };
+    const goals = nutGoals || NUT_DEFAULTS;
+    const allNutItems = nutData ? Object.values(nutData.sections || {}).flat() : [];
+    const nutTotal = allNutItems.reduce(
+      (acc, i) => ({ kcal: acc.kcal + (i.kcal||0), prot: acc.prot + (i.prot||0), carbs: acc.carbs + (i.carbs||0), fats: acc.fats + (i.fats||0) }),
+      { kcal: 0, prot: 0, carbs: 0, fats: 0 }
+    );
+    const nutKcal   = Math.round(nutTotal.kcal);
+    const nutPct    = Math.min(100, goals.kcal > 0 ? (nutKcal / goals.kcal) * 100 : 0);
+    const nutColor  = nutPct >= 100 ? 'var(--danger)' : nutPct >= 80 ? 'var(--success)' : 'var(--accent)';
+    const hasNut    = allNutItems.length > 0;
 
     // Workout summary for today
     const doneCount = workout?.exercises?.filter(e => e.done).length || 0;
@@ -142,6 +157,24 @@ export async function render(container) {
           <p style="font-size:14px;color:var(--text-secondary)">Aucune séance enregistrée</p>
         `}
       </div>
+
+      <a href="#/nutrition" class="card dash-nut-card" style="display:block;text-decoration:none;color:inherit">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+          <div class="card-title" style="margin:0">🍽️ Nutrition</div>
+          <span style="font-size:13px;font-weight:600;color:${nutColor}">
+            ${nutKcal} <span style="color:var(--text-secondary);font-weight:400;font-size:12px">/ ${goals.kcal} kcal</span>
+          </span>
+        </div>
+        <div style="height:6px;background:var(--bg-primary);border-radius:3px;overflow:hidden;margin-bottom:10px">
+          <div style="height:100%;width:${nutPct}%;background:${nutColor};border-radius:3px;transition:width .3s"></div>
+        </div>
+        <div style="display:flex;justify-content:space-between;font-size:12px">
+          <span style="color:var(--text-secondary)">P <b style="color:var(--text-primary)">${Math.round(nutTotal.prot)}g</b></span>
+          <span style="color:var(--text-secondary)">G <b style="color:var(--text-primary)">${Math.round(nutTotal.carbs)}g</b></span>
+          <span style="color:var(--text-secondary)">L <b style="color:var(--text-primary)">${Math.round(nutTotal.fats)}g</b></span>
+          <span style="color:var(--accent);font-size:11px">${hasNut ? 'Voir détail →' : 'Renseigner →'}</span>
+        </div>
+      </a>
 
       <div class="card">
         <div class="card-title">Cette semaine</div>

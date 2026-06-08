@@ -2087,6 +2087,376 @@ textarea {
   margin-bottom: 8px;
 }
 
+/* ===== Nutrition ===== */
+
+/* Macro bars */
+.nut-macro-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.nut-macro-row:last-child { margin-bottom: 0; }
+
+.nut-macro-label {
+  font-size: 12px;
+  color: var(--text-secondary);
+  width: 68px;
+  flex-shrink: 0;
+}
+.nut-macro-track {
+  flex: 1;
+  height: 6px;
+  background: var(--border);
+  border-radius: 3px;
+  overflow: hidden;
+}
+.nut-macro-fill {
+  height: 100%;
+  border-radius: 3px;
+  transition: width 0.4s ease;
+}
+.nut-macro-value {
+  font-size: 12px;
+  font-weight: 600;
+  min-width: 80px;
+  text-align: right;
+  flex-shrink: 0;
+}
+.nut-macro-target {
+  font-weight: 400;
+  color: var(--text-secondary);
+}
+
+/* Sections */
+.nut-section {
+  padding: 0;
+  overflow: hidden;
+  margin-bottom: 8px;
+}
+.nut-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 14px;
+  cursor: pointer;
+  user-select: none;
+}
+.nut-section-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.nut-section-icon { font-size: 16px; }
+.nut-section-label {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.nut-section-count {
+  font-size: 11px;
+  color: var(--text-secondary);
+  background: var(--border);
+  border-radius: 8px;
+  padding: 1px 6px;
+}
+.nut-section-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.nut-section-kcal {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--accent);
+}
+.nut-add-btn {
+  width: 28px !important;
+  height: 28px !important;
+  color: var(--accent) !important;
+  border-color: var(--accent) !important;
+}
+
+/* Section body — masqué par défaut, visible si .open */
+.nut-section-body {
+  display: none;
+  padding: 0 14px 12px;
+  border-top: 1px solid var(--border);
+}
+.nut-section.open .nut-section-body { display: block; }
+
+.nut-food-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border);
+  gap: 8px;
+}
+.nut-food-item:last-of-type { border-bottom: none; }
+.nut-food-info { flex: 1; min-width: 0; }
+.nut-food-name {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.nut-food-brand { color: var(--text-secondary); font-weight: 400; }
+.nut-food-meta {
+  font-size: 11px;
+  color: var(--text-secondary);
+  margin-top: 2px;
+}
+.nut-food-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+.nut-food-kcal {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.nut-delete-btn {
+  width: 26px !important;
+  height: 26px !important;
+  color: var(--text-secondary) !important;
+}
+.nut-section-footer {
+  display: flex;
+  gap: 16px;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+.nut-section-footer b { color: var(--text-primary); }
+
+/* Modal recents */
+.nut-recents-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.nut-recent-chip {
+  font-size: 12px;
+  padding: 4px 10px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: border-color 0.15s, color 0.15s;
+}
+.nut-recent-chip:hover,
+.nut-recent-chip.selected {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* ── Nutrition — onglets de la modale ───────────────────────────────────── */
+.nut-tabs {
+  display: flex;
+  gap: 4px;
+  background: var(--bg-secondary);
+  border-radius: 8px;
+  padding: 3px;
+}
+.nut-tab {
+  flex: 1;
+  font-size: 12px;
+  padding: 6px 4px;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-secondary);
+  border: none;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+  white-space: nowrap;
+}
+.nut-tab.active {
+  background: var(--bg-card);
+  color: var(--text-primary);
+  font-weight: 600;
+}
+.nut-tab:hover:not(.active) { color: var(--text-primary); }
+
+/* ── Nutrition — résultats de recherche ─────────────────────────────────── */
+.nut-result-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-secondary);
+  cursor: pointer;
+  transition: background 0.15s;
+  margin-bottom: 6px;
+}
+.nut-result-item:hover { background: var(--bg-card); }
+.nut-result-name {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+.nut-result-meta {
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+/* ── Nutrition — preview calories confirmation ──────────────────────────── */
+.nut-confirm-preview {
+  background: var(--bg-secondary);
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+  min-height: 38px;
+}
+
+/* ── Nutrition — bouton estimation besoins ─────────────────────────────── */
+.nut-estimate-btn {
+  font-size: 11px;
+  padding: 5px 10px;
+  border-radius: 12px;
+  border: 1px solid rgba(79, 195, 247, 0.4);
+  background: rgba(79, 195, 247, 0.08);
+  color: var(--accent);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s, border-color 0.15s;
+}
+.nut-estimate-btn:hover {
+  background: rgba(79, 195, 247, 0.18);
+  border-color: var(--accent);
+}
+
+/* ── Nutrition — questionnaire goals ────────────────────────────────────── */
+.ng-q-block {
+  margin-bottom: 14px;
+  padding: 12px 14px;
+  background: var(--bg-secondary);
+  border-radius: var(--radius-sm);
+  border: 1px solid transparent;
+  transition: border-color 0.15s;
+}
+.ng-q-block.ng-q-error { border-color: var(--danger); }
+.ng-q-label {
+  font-size: 13px;
+  font-weight: 500;
+  margin-bottom: 10px;
+  color: var(--text-primary);
+}
+.ng-q-choices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.ng-q-choice {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  cursor: pointer;
+}
+.ng-q-choice input[type=radio] { display: none; }
+.ng-q-choice span {
+  font-size: 12px;
+  padding: 5px 12px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--bg-card);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.ng-q-choice input:checked + span {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: rgba(79, 195, 247, 0.1);
+}
+
+/* ── Nutrition — résultat goals ─────────────────────────────────────────── */
+.ng-result-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+.ng-result-tile {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 14px 8px;
+  background: var(--bg-secondary);
+  border-radius: var(--radius-sm);
+  border-top: 3px solid;
+  text-align: center;
+}
+.ng-result-val {
+  font-size: 24px;
+  font-weight: 700;
+  color: var(--text-primary);
+  line-height: 1;
+}
+.ng-result-unit {
+  font-size: 11px;
+  color: var(--text-secondary);
+  margin-top: 4px;
+}
+.ng-tip {
+  font-size: 12px;
+  color: var(--text-secondary);
+  padding: 8px 10px;
+  background: var(--bg-secondary);
+  border-radius: var(--radius-sm);
+  line-height: 1.4;
+}
+
+/* ── Nutrition — photo IA ───────────────────────────────────────────────── */
+.nut-photo-upload-label {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  padding: 24px 16px;
+  border: 2px dashed var(--border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: border-color 0.2s, background 0.2s;
+  color: var(--text-secondary);
+  text-align: center;
+}
+.nut-photo-upload-label:hover {
+  border-color: var(--accent);
+  background: rgba(79, 195, 247, 0.05);
+  color: var(--text-primary);
+}
+.nut-photo-food-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 10px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-secondary);
+  cursor: pointer;
+  margin-bottom: 6px;
+  transition: background 0.15s;
+}
+.nut-photo-food-row:hover { background: var(--bg-card); }
+.nut-photo-food-row input[type=checkbox] {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  accent-color: var(--accent);
+}
+
+/* ── Nutrition — bilan (date nav row) ───────────────────────────────────── */
+.date-nav-row {
+  padding: 0 0 12px;
+}
+
 /* ===== Scrollbar ===== */
 ::-webkit-scrollbar { width: 4px; }
 ::-webkit-scrollbar-track { background: var(--bg-primary); }

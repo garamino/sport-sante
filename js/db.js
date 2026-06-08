@@ -160,6 +160,11 @@ export async function saveApiKey(key) {
   await setDoc(doc(db, 'users', getUid()), { hasApiKey: true }, { merge: true });
 }
 
+export async function getApiKey() {
+  const snap = await getDoc(userDoc('settings/apiKey'));
+  return snap.exists() ? snap.data().key : null;
+}
+
 export async function getCoachNotes() {
   const snap = await getDoc(userDoc('coachContext/notes'));
   return snap.exists() ? snap.data() : null;
@@ -258,6 +263,51 @@ export async function getStravaTokens() {
 
 export async function clearStravaTokens() {
   await deleteDoc(userDoc('settings/strava'));
+}
+
+// === Nutrition ===
+export async function getNutrition(date) {
+  const snap = await getDoc(userDoc(`nutrition/${date}`));
+  return snap.exists() ? snap.data() : null;
+}
+
+export async function saveNutrition(date, data) {
+  await setDoc(userDoc(`nutrition/${date}`), { ...data, date, savedAt: Timestamp.now() });
+}
+
+export async function getNutritionGoals() {
+  const snap = await getDoc(userDoc('settings/nutritionGoals'));
+  return snap.exists() ? snap.data() : null;
+}
+
+export async function saveNutritionGoals(goals) {
+  await setDoc(userDoc('settings/nutritionGoals'), { ...goals, savedAt: Timestamp.now() });
+}
+
+export async function getRecentNutritionFoods(count = 8) {
+  const q = query(userCollection('nutritionFoods'), orderBy('lastUsed', 'desc'), limit(count));
+  const snap = await getDocs(q);
+  return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+}
+
+export async function saveNutritionFood(data) {
+  // Upsert by name (case-insensitive match)
+  const q = query(userCollection('nutritionFoods'), orderBy('lastUsed', 'desc'), limit(50));
+  const snap = await getDocs(q);
+  const existing = snap.docs.find(d => d.data().name?.toLowerCase() === data.name?.toLowerCase());
+  if (existing) {
+    await updateDoc(userDoc(`nutritionFoods/${existing.id}`), {
+      ...data,
+      useCount: (existing.data().useCount || 0) + 1,
+      lastUsed: Timestamp.now(),
+    });
+  } else {
+    await addDoc(userCollection('nutritionFoods'), {
+      ...data,
+      useCount: 1,
+      lastUsed: Timestamp.now(),
+    });
+  }
 }
 
 // === Health Documents ===

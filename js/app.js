@@ -172,6 +172,7 @@ settingsBtn.addEventListener('click', async () => {
           </button>
         `}
       </div>
+
     </div>
   `;
   document.body.appendChild(overlay);
