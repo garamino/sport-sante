@@ -360,8 +360,10 @@ function _extractGeminiJSON(data, type = 'object') {
   const candidates = data.candidates;
   if (!candidates?.length) {
     const reason = data.promptFeedback?.blockReason;
-    throw new Error(reason ? `Gemini a bloqué la requête (${reason})` : 'Réponse inattendue de Gemini');
+    console.error('[Gemini] Pas de candidates. Réponse complète :', JSON.stringify(data));
+    throw new Error(reason ? `Gemini a bloqué la requête (${reason})` : 'Réponse vide de Gemini (pas de candidates)');
   }
+  const finishReason = candidates[0]?.finishReason;
   const parts = candidates[0]?.content?.parts || [];
   // Préférer les parts non-thinking ; si tout est thinking, prendre quand même
   const textParts = parts.filter(p => !p.thought);
@@ -371,7 +373,11 @@ function _extractGeminiJSON(data, type = 'object') {
   const source = stripped || text;
   const pattern = type === 'array' ? /\[[\s\S]*\]/ : /\{[\s\S]*\}/;
   const match = source.match(pattern);
-  if (!match) throw new Error('Réponse inattendue de Gemini');
+  if (!match) {
+    console.error('[Gemini] Impossible d\'extraire le JSON. finishReason:', finishReason, '| Texte brut :', text);
+    const preview = text.slice(0, 120).replace(/\n/g, ' ') || '(vide)';
+    throw new Error(`Réponse inattendue de Gemini [${finishReason || '?'}] : "${preview}"`);
+  }
   return JSON.parse(match[0]);
 }
 
