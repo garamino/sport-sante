@@ -462,8 +462,13 @@ function _showQuestionnaire(inner, close, questions, knownData, apiKey) {
       const result = await _geminiComputeGoals(knownData, answers, apiKey);
       _showGoalsResult(inner, close, result);
     } catch (err) {
-      showToast('Erreur — ' + err.message);
-      _showQuestionnaire(inner, close, questions, knownData, apiKey);
+      inner.innerHTML = `
+        <div style="text-align:center;padding:32px 16px">
+          <p style="font-size:14px;font-weight:500;color:var(--danger)">Erreur</p>
+          <p style="font-size:12px;color:var(--text-secondary);margin-top:6px">${err.message}</p>
+          <button id="ng-retry" class="btn btn-primary" style="margin-top:16px;width:100%">Réessayer</button>
+        </div>`;
+      inner.querySelector('#ng-retry').addEventListener('click', () => _showQuestionnaire(inner, close, questions, knownData, apiKey));
     }
   });
 }
