@@ -355,6 +355,26 @@ async function openGoalsModal() {
   }
 }
 
+// Extrait un objet/tableau JSON depuis la réponse Gemini (gère les blocs markdown et le thinking)
+function _extractGeminiJSON(data, type = 'object') {
+  const candidates = data.candidates;
+  if (!candidates?.length) {
+    const reason = data.promptFeedback?.blockReason;
+    throw new Error(reason ? `Gemini a bloqué la requête (${reason})` : 'Réponse inattendue de Gemini');
+  }
+  const parts = candidates[0]?.content?.parts || [];
+  // Préférer les parts non-thinking ; si tout est thinking, prendre quand même
+  const textParts = parts.filter(p => !p.thought);
+  const text = (textParts.length ? textParts : parts).map(p => p.text || '').join('');
+  // Strip markdown code fences (```json ... ``` ou ``` ... ```)
+  const stripped = text.replace(/```(?:json)?\s*([\s\S]*?)```/g, '$1').trim();
+  const source = stripped || text;
+  const pattern = type === 'array' ? /\[[\s\S]*\]/ : /\{[\s\S]*\}/;
+  const match = source.match(pattern);
+  if (!match) throw new Error('Réponse inattendue de Gemini');
+  return JSON.parse(match[0]);
+}
+
 async function _geminiAskQuestions(knownData, apiKey) {
   const ctx = Object.entries(knownData).map(([k, v]) => `- ${k} : ${v}`).join('\n');
   const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
@@ -379,12 +399,7 @@ Maximum 5 questions. Ne demande pas ce que tu as déjà. Questions pertinentes u
     }),
   });
   if (!res.ok) throw new Error(`Gemini ${res.status}`);
-  const data = await res.json();
-  const parts = data.candidates?.[0]?.content?.parts || [];
-  const text = parts.filter(p => !p.thought).map(p => p.text || '').join('');
-  const match = text.match(/\[[\s\S]*\]/);
-  if (!match) throw new Error('Réponse inattendue de Gemini');
-  return JSON.parse(match[0]);
+  return _extractGeminiJSON(await res.json(), 'array');
 }
 
 function _showQuestionnaire(inner, close, questions, knownData, apiKey) {
@@ -501,12 +516,7 @@ Valeurs entières. Explication en français, concise. 3 tips pratiques et action
     }),
   });
   if (!res.ok) throw new Error(`Gemini ${res.status}`);
-  const data = await res.json();
-  const parts = data.candidates?.[0]?.content?.parts || [];
-  const text = parts.filter(p => !p.thought).map(p => p.text || '').join('');
-  const match = text.match(/\{[\s\S]*\}/);
-  if (!match) throw new Error('Réponse inattendue de Gemini');
-  return JSON.parse(match[0]);
+  return _extractGeminiJSON(await res.json(), 'object');
 }
 
 function _showGoalsResult(inner, close, result) {
@@ -907,12 +917,7 @@ Règles : utilise "g" ou "ml" comme unit. Maximum 8 aliments. Valeurs réalistes
       throw new Error(err.error?.message || `Erreur API Gemini (${res.status})`);
     }
 
-    const data = await res.json();
-    const parts = data.candidates?.[0]?.content?.parts || [];
-    const text = parts.filter(p => !p.thought).map(p => p.text || '').join('');
-    const match = text.match(/\[[\s\S]*\]/);
-    if (!match) throw new Error('Réponse inattendue de Gemini');
-    return JSON.parse(match[0]);
+    return _extractGeminiJSON(await res.json(), 'array');
   }
 
   function renderPhotoResults(el, foods) {
