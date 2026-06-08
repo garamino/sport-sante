@@ -164,7 +164,13 @@ function foodItemHTML(sectionKey, item) {
       </div>
       <div class="nut-food-actions">
         <span class="nut-food-kcal">${Math.round(item.kcal)} kcal</span>
-        <button class="nut-delete-btn btn-icon" data-section="${sectionKey}" data-id="${item.id}">
+        <button class="nut-edit-btn btn-icon" data-section="${sectionKey}" data-id="${item.id}" title="Modifier">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+            <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+            <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+          </svg>
+        </button>
+        <button class="nut-delete-btn btn-icon" data-section="${sectionKey}" data-id="${item.id}" title="Supprimer">
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
             <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
           </svg>
@@ -194,6 +200,14 @@ function bindEvents() {
     btn.addEventListener('click', e => { e.stopPropagation(); openAddModal(btn.dataset.section); });
   });
 
+  _container.querySelectorAll('.nut-edit-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const { section, id } = btn.dataset;
+      const item = _data.sections[section]?.find(i => i.id === id);
+      if (item) openEditEntryModal(section, item);
+    });
+  });
+
   _container.querySelectorAll('.nut-delete-btn').forEach(btn => {
     btn.addEventListener('click', async () => {
       const { section, id } = btn.dataset;
@@ -205,6 +219,80 @@ function bindEvents() {
 
   document.getElementById('nut-estimate-btn')?.addEventListener('click', openGoalsModal);
   document.getElementById('nut-edit-goals-btn')?.addEventListener('click', openEditGoalsModal);
+}
+
+// ─── Modale : édition d'un aliment ──────────────────────────────────────────
+
+function openEditEntryModal(sectionKey, item) {
+  document.getElementById('nut-entry-edit-modal')?.remove();
+  const modal = document.createElement('div');
+  modal.id = 'nut-entry-edit-modal';
+  modal.className = 'settings-modal-overlay';
+
+  modal.innerHTML = `
+    <div class="settings-modal" style="max-width:380px">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+        <h3 style="font-size:15px;font-weight:600;margin:0">Modifier l'aliment</h3>
+        <button id="nee-close" class="btn-icon" style="width:30px;height:30px">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+            <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+          </svg>
+        </button>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:10px">
+        <input id="nee-name"  type="text"   value="${item.name}"        placeholder="Nom *" />
+        <input id="nee-brand" type="text"   value="${item.brand || ''}" placeholder="Marque (optionnel)" />
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+          <input id="nee-qty" type="number" value="${item.qty}" min="1" step="1" placeholder="Quantité *" />
+          <select id="nee-unit">
+            <option value="g"       ${item.unit === 'g'        ? 'selected' : ''}>g</option>
+            <option value="ml"      ${item.unit === 'ml'       ? 'selected' : ''}>ml</option>
+            <option value="pièce"   ${item.unit === 'pièce'    ? 'selected' : ''}>pièce(s)</option>
+            <option value="portion" ${item.unit === 'portion'  ? 'selected' : ''}>portion(s)</option>
+          </select>
+        </div>
+        <div id="nee-macros" style="font-size:12px;color:var(--text-secondary);padding:8px;background:var(--bg-secondary);border-radius:8px;text-align:center"></div>
+      </div>
+      <button id="nee-save" class="btn btn-primary" style="width:100%;margin-top:16px">Enregistrer</button>
+    </div>`;
+
+  document.body.appendChild(modal);
+
+  const qtyInput  = modal.querySelector('#nee-qty');
+  const macrosEl  = modal.querySelector('#nee-macros');
+
+  function updateMacros() {
+    const newQty = Math.max(1, parseFloat(qtyInput.value) || 1);
+    const ratio  = newQty / item.qty;
+    macrosEl.textContent = `${Math.round(item.kcal * ratio)} kcal · P:${round1(item.prot * ratio)}g · G:${round1(item.carbs * ratio)}g · L:${round1(item.fats * ratio)}g`;
+  }
+  updateMacros();
+  qtyInput.addEventListener('input', updateMacros);
+
+  const close = () => modal.remove();
+  modal.querySelector('#nee-close').addEventListener('click', close);
+  modal.addEventListener('click', e => { if (e.target === modal) close(); });
+
+  modal.querySelector('#nee-save').addEventListener('click', async () => {
+    const name = modal.querySelector('#nee-name').value.trim();
+    const brand = modal.querySelector('#nee-brand').value.trim();
+    const qty   = Math.max(1, parseFloat(qtyInput.value) || 1);
+    const unit  = modal.querySelector('#nee-unit').value;
+    if (!name) { showToast('Le nom est obligatoire'); return; }
+
+    const ratio = qty / item.qty;
+    const updated = {
+      ...item, name, brand, qty, unit,
+      kcal:  Math.round(item.kcal  * ratio),
+      prot:  round1(item.prot  * ratio),
+      carbs: round1(item.carbs * ratio),
+      fats:  round1(item.fats  * ratio),
+    };
+    _data.sections[sectionKey] = _data.sections[sectionKey].map(i => i.id === item.id ? updated : i);
+    await saveNutrition(currentDate, _data);
+    close();
+    renderView();
+  });
 }
 
 // ─── Modale : édition manuelle des objectifs ────────────────────────────────
