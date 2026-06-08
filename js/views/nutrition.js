@@ -597,11 +597,33 @@ function _showGoalsResult(inner, close, result) {
 // ─── Open Food Facts ─────────────────────────────────────────────────────────
 
 async function searchFoods(query) {
-  const url = `https://world.openfoodfacts.org/cgi/search.pl?search_terms=${encodeURIComponent(query)}&action=process&json=1&page_size=8&lc=fr&cc=fr`;
-  const res = await fetch(url);
-  if (!res.ok) throw new Error('API indisponible');
-  const data = await res.json();
-  return (data.products || []).filter(p => p.product_name || p.product_name_fr);
+  const base = 'https://world.openfoodfacts.org/cgi/search.pl?action=process&json=1&page_size=10&lc=fr&cc=fr';
+  const words = query.trim().split(/\s+/);
+
+  const requests = [
+    fetch(`${base}&search_terms=${encodeURIComponent(query)}`).then(r => r.json()),
+  ];
+  // Si plusieurs mots : tente aussi premier mot = marque, reste = nom produit
+  if (words.length >= 2) {
+    const brand = words[0];
+    const name = words.slice(1).join(' ');
+    requests.push(
+      fetch(`${base}&brands=${encodeURIComponent(brand)}&search_terms=${encodeURIComponent(name)}`).then(r => r.json())
+    );
+  }
+
+  const results = await Promise.allSettled(requests);
+  const seen = new Set();
+  const products = [];
+  for (const r of results) {
+    if (r.status !== 'fulfilled') continue;
+    for (const p of (r.value.products || [])) {
+      if (!(p.product_name || p.product_name_fr)) continue;
+      const key = p.code || (p.product_name_fr || p.product_name);
+      if (!seen.has(key)) { seen.add(key); products.push(p); }
+    }
+  }
+  return products.slice(0, 10);
 }
 
 async function lookupBarcode(barcode) {
@@ -705,7 +727,7 @@ function openAddModal(sectionKey) {
   // ── Recherche Open Food Facts ─────────────────────────────────────────────
   function showSearch(el) {
     el.innerHTML = `
-      <input id="nut-search-input" type="text" placeholder="Nom du produit…" autocomplete="off" />
+      <input id="nut-search-input" type="text" placeholder="Nom ou marque + nom (ex: Alesto amandes)" autocomplete="off" />
       <div id="nut-search-results" style="margin-top:10px"></div>`;
 
     let debounce = null;
