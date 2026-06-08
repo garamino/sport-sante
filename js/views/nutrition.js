@@ -944,36 +944,72 @@ Règles : utilise "g" ou "ml" comme unit. Maximum 8 aliments. Valeurs réalistes
       el.innerHTML = `<p style="text-align:center;font-size:13px;color:var(--text-secondary);padding:16px 0">Aucun aliment détecté — essaie avec une photo plus nette.</p>`;
       return;
     }
+
+    // Copie mutable des quantités (base = valeur Gemini)
+    const qtys = foods.map(f => f.qty);
+
+    function macrosForQty(f, qty) {
+      const ratio = qty / f.qty;
+      return {
+        kcal: Math.round(f.kcal * ratio),
+        prot: round1(f.prot * ratio),
+        carbs: round1(f.carbs * ratio),
+        fats: round1(f.fats * ratio),
+      };
+    }
+
+    function foodRowHTML(f, i) {
+      const m = macrosForQty(f, qtys[i]);
+      return `
+        <div class="nut-photo-food-row" data-idx="${i}">
+          <input type="checkbox" data-idx="${i}" checked style="margin-top:2px;flex-shrink:0">
+          <div style="min-width:0;flex:1">
+            <div style="font-size:13px;font-weight:500;margin-bottom:4px">${f.name}</div>
+            <div style="display:flex;align-items:center;gap:6px;margin-bottom:3px">
+              <input type="number" class="photo-qty-input" data-idx="${i}" value="${qtys[i]}" min="1" step="1"
+                style="width:64px;padding:3px 6px;font-size:12px;border-radius:6px;border:1px solid var(--border);background:var(--bg-secondary);color:var(--text-primary);text-align:center">
+              <span style="font-size:12px;color:var(--text-secondary)">${f.unit}</span>
+            </div>
+            <div class="photo-macros" data-idx="${i}" style="font-size:11px;color:var(--text-secondary)">
+              ${m.kcal} kcal · P:${m.prot}g · G:${m.carbs}g · L:${m.fats}g
+            </div>
+          </div>
+        </div>`;
+    }
+
     el.innerHTML = `
       <div style="font-size:12px;color:var(--text-secondary);margin-bottom:10px">
-        ${foods.length} aliment(s) détecté(s) — coche ceux à ajouter :
+        ${foods.length} aliment(s) détecté(s) — ajuste les quantités et coche ceux à ajouter :
       </div>
-      <div id="nut-photo-food-list">
-        ${foods.map((f, i) => `
-          <label class="nut-photo-food-row">
-            <input type="checkbox" data-idx="${i}" checked>
-            <div style="min-width:0;flex:1">
-              <div style="font-size:13px;font-weight:500">${f.name}</div>
-              <div style="font-size:11px;color:var(--text-secondary)">${f.qty}${f.unit} · ${Math.round(f.kcal)} kcal · P:${round1(f.prot)}g · G:${round1(f.carbs)}g · L:${round1(f.fats)}g</div>
-            </div>
-          </label>`).join('')}
-      </div>
+      <div id="nut-photo-food-list">${foods.map((f, i) => foodRowHTML(f, i)).join('')}</div>
       <button id="nut-photo-add" class="btn btn-primary" style="width:100%;margin-top:12px">
         Ajouter les sélectionnés
       </button>`;
+
+    // Mise à jour des macros en temps réel
+    el.querySelectorAll('.photo-qty-input').forEach(input => {
+      input.addEventListener('input', () => {
+        const i = parseInt(input.dataset.idx);
+        const qty = Math.max(1, parseFloat(input.value) || 1);
+        qtys[i] = qty;
+        const m = macrosForQty(foods[i], qty);
+        el.querySelector(`.photo-macros[data-idx="${i}"]`).textContent =
+          `${m.kcal} kcal · P:${m.prot}g · G:${m.carbs}g · L:${m.fats}g`;
+      });
+    });
 
     el.querySelector('#nut-photo-add').addEventListener('click', async () => {
       const checked = el.querySelectorAll('input[type=checkbox]:checked');
       if (!checked.length) { showToast('Sélectionne au moins un aliment'); return; }
       for (const cb of checked) {
-        const f = foods[parseInt(cb.dataset.idx)];
+        const i = parseInt(cb.dataset.idx);
+        const f = foods[i];
+        const qty = qtys[i];
+        const m = macrosForQty(f, qty);
         await addEntry({
           name: f.name, brand: '',
-          qty:   f.qty,   unit:  f.unit,
-          kcal:  Math.round(f.kcal),
-          prot:  round1(f.prot),
-          carbs: round1(f.carbs),
-          fats:  round1(f.fats),
+          qty, unit: f.unit,
+          kcal: m.kcal, prot: m.prot, carbs: m.carbs, fats: m.fats,
         });
       }
     });
