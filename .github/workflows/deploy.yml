@@ -30,7 +30,7 @@ jobs:
           CURRENT_NUM=$(echo "$CURRENT" | grep -oP '\d+$' || echo "0")
           # Increment or reset counter
           if [ "$CURRENT_DATE" = "$TODAY" ]; then
-            NUM=$((CURRENT_NUM + 1))
+            NUM=$((10#$CURRENT_NUM + 1))
           else
             NUM=1
           fi
