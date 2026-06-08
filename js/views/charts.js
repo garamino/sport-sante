@@ -216,6 +216,7 @@ async function renderChart(type) {
   try {
     if (type === 'weight') {
       area.innerHTML = `
+        <div class="period-buttons" id="weight-period-buttons"></div>
         <div class="chart-container"><canvas id="main-chart"></canvas></div>
         <div id="chart-empty" class="empty-state hidden">
           <p>Pas encore de données</p>
@@ -225,67 +226,107 @@ async function renderChart(type) {
       const canvas = document.getElementById('main-chart');
       const emptyEl = document.getElementById('chart-empty');
 
-      const weeklies = await getAllWeeklies();
-      const data = weeklies.filter(w => w.weight);
+      const allWorkouts = await getAllWorkouts();
+      const allWeightData = allWorkouts.filter(w => w.weight != null && w.weight > 0);
 
-      if (data.length === 0) {
-        canvas.parentElement.classList.add('hidden');
-        emptyEl.classList.remove('hidden');
-        return;
+      let currentWeightPeriod = '3m';
+
+      function applyWeightPeriod() {
+        if (chartInstance) { chartInstance.destroy(); chartInstance = null; }
+
+        document.querySelectorAll('#weight-period-buttons .period-btn').forEach(btn => {
+          btn.classList.toggle('active', btn.dataset.period === currentWeightPeriod);
+        });
+
+        const data = filterByPeriod(allWeightData.map(w => ({ ...w, date: w.date })), currentWeightPeriod);
+
+        if (data.length === 0) {
+          canvas.parentElement.classList.add('hidden');
+          emptyEl.classList.remove('hidden');
+          return;
+        }
+        canvas.parentElement.classList.remove('hidden');
+        emptyEl.classList.add('hidden');
+
+        const hasBodyFat = data.some(w => w.bodyFat != null);
+
+        chartInstance = new Chart(canvas.getContext('2d'), {
+          type: 'line',
+          data: {
+            labels: data.map(w => {
+              const d = new Date(w.date + 'T00:00:00');
+              return d.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' });
+            }),
+            datasets: [
+              {
+                label: 'Poids (kg)',
+                data: data.map(w => w.weight),
+                borderColor: chartColors.accent,
+                backgroundColor: chartColors.accent + '33',
+                fill: true,
+                tension: 0.3,
+                pointRadius: 4,
+                pointBackgroundColor: chartColors.accent,
+                yAxisID: 'y',
+              },
+              ...(hasBodyFat ? [{
+                label: 'Masse grasse (%)',
+                data: data.map(w => w.bodyFat ?? null),
+                borderColor: chartColors.warning,
+                backgroundColor: 'transparent',
+                borderDash: [4, 4],
+                tension: 0.3,
+                pointRadius: 4,
+                pointBackgroundColor: chartColors.warning,
+                yAxisID: 'y1',
+                spanGaps: true,
+              }] : []),
+            ],
+          },
+          options: {
+            ...baseOptions,
+            scales: {
+              x: baseOptions.scales.x,
+              y: { ...baseOptions.scales.y, position: 'left', suggestedMin: 55, suggestedMax: 70, title: { display: true, text: 'kg', color: chartColors.text } },
+              ...(hasBodyFat ? {
+                y1: {
+                  position: 'right',
+                  ticks: { color: chartColors.text, font: { size: 11 } },
+                  grid: { drawOnChartArea: false },
+                  suggestedMin: 10, suggestedMax: 30,
+                  title: { display: true, text: '%', color: chartColors.text },
+                },
+              } : {}),
+            },
+            plugins: {
+              legend: { display: hasBodyFat, labels: { color: chartColors.text } },
+              tooltip: {
+                callbacks: {
+                  title: (items) => {
+                    const w = data[items[0]?.dataIndex];
+                    if (!w) return '';
+                    const d = new Date(w.date + 'T00:00:00');
+                    return d.toLocaleDateString('fr-FR', { weekday: 'short', day: 'numeric', month: 'long' });
+                  },
+                },
+              },
+            },
+          },
+        });
       }
 
-      const hasBodyFat = data.some(w => w.bodyFat != null);
-
-      chartInstance = new Chart(canvas.getContext('2d'), {
-        type: 'line',
-        data: {
-          labels: data.map(w => `S${w.week}`),
-          datasets: [
-            {
-              label: 'Poids (kg)',
-              data: data.map(w => w.weight),
-              borderColor: chartColors.accent,
-              backgroundColor: chartColors.accent + '33',
-              fill: true,
-              tension: 0.3,
-              pointRadius: 5,
-              pointBackgroundColor: chartColors.accent,
-              yAxisID: 'y',
-            },
-            ...(hasBodyFat ? [{
-              label: 'Masse grasse (%)',
-              data: data.map(w => w.bodyFat ?? null),
-              borderColor: chartColors.warning,
-              backgroundColor: 'transparent',
-              borderDash: [4, 4],
-              tension: 0.3,
-              pointRadius: 4,
-              pointBackgroundColor: chartColors.warning,
-              yAxisID: 'y1',
-              spanGaps: true,
-            }] : []),
-          ],
-        },
-        options: {
-          ...baseOptions,
-          scales: {
-            x: baseOptions.scales.x,
-            y: { ...baseOptions.scales.y, position: 'left', suggestedMin: 55, suggestedMax: 70, title: { display: true, text: 'kg', color: chartColors.text } },
-            ...(hasBodyFat ? {
-              y1: {
-                position: 'right',
-                ticks: { color: chartColors.text, font: { size: 11 } },
-                grid: { drawOnChartArea: false },
-                suggestedMin: 10, suggestedMax: 30,
-                title: { display: true, text: '%', color: chartColors.text },
-              },
-            } : {}),
-          },
-          plugins: {
-            legend: { display: true, labels: { color: chartColors.text } },
-          },
-        },
+      const pb = document.getElementById('weight-period-buttons');
+      pb.innerHTML = ['1m', '3m', '6m', 'all'].map(p =>
+        `<button class="period-btn ${p === currentWeightPeriod ? 'active' : ''}" data-period="${p}">${PERIOD_LABELS[p]}</button>`
+      ).join('');
+      pb.querySelectorAll('.period-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          currentWeightPeriod = btn.dataset.period;
+          applyWeightPeriod();
+        });
       });
+
+      applyWeightPeriod();
 
     } else if (type === 'sleep') {
       area.innerHTML = `
