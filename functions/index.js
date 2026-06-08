@@ -4,7 +4,7 @@ const { getFirestore, FieldValue } = require("firebase-admin/firestore");
 
 const STRAVA_TOKEN_URL = "https://www.strava.com/oauth/token";
 const { getStorage } = require("firebase-admin/storage");
-const Anthropic = require("@anthropic-ai/sdk");
+const { GoogleGenerativeAI } = require("@google/generative-ai");
 
 initializeApp();
 const db = getFirestore();
@@ -403,16 +403,17 @@ exports.getCoachAdvice = onCall(
         }
 
         try {
-          const client = new Anthropic({ apiKey });
-          const summaryResponse = await client.messages.create({
-            model: "claude-sonnet-4-20250514",
-            max_tokens: 300,
-            temperature: 0.2,
-            system: "Tu es un assistant qui résume des données sportives. Sois factuel et concis.",
-            messages: [{ role: "user", content: summaryParts.join("\n") }],
+          const genAI = new GoogleGenerativeAI(apiKey);
+          const summaryModel = genAI.getGenerativeModel({
+            model: "gemini-2.5-flash",
+            systemInstruction: "Tu es un assistant qui résume des données sportives. Sois factuel et concis.",
+          });
+          const summaryResponse = await summaryModel.generateContent({
+            contents: [{ role: "user", parts: [{ text: summaryParts.join("\n") }] }],
+            generationConfig: { maxOutputTokens: 300, temperature: 0.2 },
           });
 
-          const summaryText = summaryResponse.content[0]?.text || "";
+          const summaryText = summaryResponse.response.text();
           const dateRange = oldWorkouts.length > 0
             ? `${oldWorkouts[oldWorkouts.length - 1]?.date} → ${oldWorkouts[0]?.date}`
             : oldSleep.length > 0
@@ -446,16 +447,17 @@ exports.getCoachAdvice = onCall(
     const promptMessage = buildUserMessage(trigger, date, data, coachWindowDays, userMessage);
 
     try {
-      const client = new Anthropic({ apiKey });
-      const response = await client.messages.create({
-        model: "claude-sonnet-4-20250514",
-        max_tokens: 400,
-        temperature: 0.3,
-        system: SYSTEM_PROMPT,
-        messages: [{ role: "user", content: promptMessage }],
+      const genAI = new GoogleGenerativeAI(apiKey);
+      const coachModel = genAI.getGenerativeModel({
+        model: "gemini-2.5-flash",
+        systemInstruction: SYSTEM_PROMPT,
+      });
+      const response = await coachModel.generateContent({
+        contents: [{ role: "user", parts: [{ text: promptMessage }] }],
+        generationConfig: { maxOutputTokens: 400, temperature: 0.3 },
       });
 
-      const advice = response.content[0]?.text || "";
+      const advice = response.response.text();
 
       // 9. Update usage counter
       currentCount++;
@@ -469,7 +471,7 @@ exports.getCoachAdvice = onCall(
 
       return { advice };
     } catch (err) {
-      if (err.status === 401) {
+      if (err.status === 400 || err.status === 401 || err.message?.includes("API_KEY_INVALID")) {
         return { error: "invalid_api_key", message: "Clé API invalide." };
       }
       throw new HttpsError("internal", "Erreur lors de l'appel au coach IA.");
@@ -520,35 +522,28 @@ exports.processHealthDoc = onCall(
       autre: "document médical",
     };
 
-    // PDFs use "document" type, images use "image" type
-    const isPdf = mediaType === "application/pdf";
-    const contentBlock = isPdf
-      ? { type: "document", source: { type: "base64", media_type: mediaType, data: base64Data } }
-      : { type: "image", source: { type: "base64", media_type: mediaType, data: base64Data } };
-
     try {
-      const client = new Anthropic({ apiKey });
-      const response = await client.messages.create({
-        model: "claude-sonnet-4-20250514",
-        max_tokens: 600,
-        system: `Tu es un assistant médical qui extrait les données clés de documents de santé.
+      const genAI = new GoogleGenerativeAI(apiKey);
+      const visionModel = genAI.getGenerativeModel({
+        model: "gemini-2.5-flash",
+        systemInstruction: `Tu es un assistant médical qui extrait les données clés de documents de santé.
 Extrais les informations de manière structurée et concise.
 Pour une prise de sang : liste chaque biomarqueur avec sa valeur, son unité et si c'est normal/bas/élevé.
 Pour un bilan médical : résume les observations et recommandations.
 Réponds en français. Sois factuel, pas de conseil médical.`,
-        messages: [{
+      });
+      const response = await visionModel.generateContent({
+        contents: [{
           role: "user",
-          content: [
-            contentBlock,
-            {
-              type: "text",
-              text: `Extrais les données de ce document (${typeLabels[type] || "document médical"}, date: ${date}). Résume de manière structurée.`,
-            },
+          parts: [
+            { inlineData: { mimeType: mediaType, data: base64Data } },
+            { text: `Extrais les données de ce document (${typeLabels[type] || "document médical"}, date: ${date}). Résume de manière structurée.` },
           ],
         }],
+        generationConfig: { maxOutputTokens: 600 },
       });
 
-      const summary = response.content[0]?.text || "";
+      const summary = response.response.text();
 
       // Count API usage
       const today = new Date().toISOString().split("T")[0];
@@ -560,7 +555,7 @@ Réponds en français. Sois factuel, pas de conseil médical.`,
 
       return { summary };
     } catch (err) {
-      if (err.status === 401) {
+      if (err.status === 400 || err.status === 401 || err.message?.includes("API_KEY_INVALID")) {
         return { error: "invalid_api_key", message: "Clé API invalide." };
       }
       throw new HttpsError("internal", "Erreur lors de l'analyse du document.");
