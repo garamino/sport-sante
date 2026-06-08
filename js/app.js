@@ -15,6 +15,7 @@ import * as chartsView from './views/charts.js';
 import * as healthView from './views/health.js';
 import * as intakesView from './views/intakes.js';
 import * as libraryView from './views/library.js';
+import * as nutritionView from './views/nutrition.js';
 import { migrateMedsToIntakes } from './migrations.js';
 import { seedLibrary } from './migrations/seed-library.js';
 
@@ -28,6 +29,7 @@ registerRoute('/charts', chartsView);
 registerRoute('/health', healthView);
 registerRoute('/intakes', intakesView);
 registerRoute('/library', libraryView);
+registerRoute('/nutrition', nutritionView);
 
 const appContainer = document.getElementById('app');
 const header = document.getElementById('app-header');
