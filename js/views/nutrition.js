@@ -378,7 +378,12 @@ function _extractGeminiJSON(data, type = 'object') {
     const preview = text.slice(0, 120).replace(/\n/g, ' ') || '(vide)';
     throw new Error(`Réponse inattendue de Gemini [${finishReason || '?'}] : "${preview}"`);
   }
-  return JSON.parse(match[0]);
+  try {
+    return JSON.parse(match[0]);
+  } catch (e) {
+    console.error('[Gemini] JSON invalide :', match[0]);
+    throw new Error(`JSON invalide de Gemini : ${e.message}`);
+  }
 }
 
 async function _geminiAskQuestions(knownData, apiKey) {
