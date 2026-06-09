@@ -252,6 +252,12 @@ function openEditEntryModal(sectionKey, item) {
           </select>
         </div>
         <div id="nee-macros" style="font-size:12px;color:var(--text-secondary);padding:8px;background:var(--bg-secondary);border-radius:8px;text-align:center"></div>
+        <div>
+          <label style="font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--text-secondary);display:block;margin-bottom:5px">Déplacer vers</label>
+          <select id="nee-section">
+            ${SECTIONS.map(s => `<option value="${s.key}" ${s.key === sectionKey ? 'selected' : ''}>${s.icon} ${s.label}</option>`).join('')}
+          </select>
+        </div>
       </div>
       <button id="nee-save" class="btn btn-primary" style="width:100%;margin-top:16px">Enregistrer</button>
     </div>`;
@@ -274,10 +280,11 @@ function openEditEntryModal(sectionKey, item) {
   modal.addEventListener('click', e => { if (e.target === modal) close(); });
 
   modal.querySelector('#nee-save').addEventListener('click', async () => {
-    const name = modal.querySelector('#nee-name').value.trim();
-    const brand = modal.querySelector('#nee-brand').value.trim();
-    const qty   = Math.max(1, parseFloat(qtyInput.value) || 1);
-    const unit  = modal.querySelector('#nee-unit').value;
+    const name        = modal.querySelector('#nee-name').value.trim();
+    const brand       = modal.querySelector('#nee-brand').value.trim();
+    const qty         = Math.max(1, parseFloat(qtyInput.value) || 1);
+    const unit        = modal.querySelector('#nee-unit').value;
+    const targetSection = modal.querySelector('#nee-section').value;
     if (!name) { showToast('Le nom est obligatoire'); return; }
 
     const ratio = qty / item.qty;
@@ -288,10 +295,19 @@ function openEditEntryModal(sectionKey, item) {
       carbs: round1(item.carbs * ratio),
       fats:  round1(item.fats  * ratio),
     };
-    _data.sections[sectionKey] = _data.sections[sectionKey].map(i => i.id === item.id ? updated : i);
+
+    _data.sections[sectionKey] = _data.sections[sectionKey].filter(i => i.id !== item.id);
+    if (!_data.sections[targetSection]) _data.sections[targetSection] = [];
+    _data.sections[targetSection].push(updated);
+
     await saveNutrition(currentDate, _data);
     close();
     renderView();
+    if (targetSection !== sectionKey) {
+      const targetLabel = SECTIONS.find(s => s.key === targetSection)?.label;
+      showToast(`Déplacé vers ${targetLabel} ✓`);
+      _container.querySelector(`.nut-section[data-section="${targetSection}"]`)?.classList.add('open');
+    }
   });
 }
 
@@ -1027,7 +1043,9 @@ function openAddModal(sectionKey) {
 
   async function analyzePhotoWithGemini(base64, mediaType, apiKey, hint = '') {
     const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
-    const hintLine = hint ? `\nInstruction supplémentaire de l'utilisateur : ${hint}` : '';
+    const hintSection = hint
+      ? `\n\nInstruction de l'utilisateur : "${hint}"\nImportant : si l'instruction précise une quantité (ex: "j'en ai mangé 3", "une portion", "2 tranches"), utilise-la pour calculer les macros TOTALES pour cette quantité exacte. Lis les valeurs nutritionnelles sur l'emballage si visible, déduis le poids/la quantité d'une unité, puis multiplie. Adapte l'unité en conséquence (pièce, tranche, portion…).`
+      : '';
 
     const res = await fetch(endpoint, {
       method: 'POST',
@@ -1037,10 +1055,19 @@ function openAddModal(sectionKey) {
           parts: [
             { inline_data: { mime_type: mediaType, data: base64 } },
             {
-              text: `Analyse cette photo de repas. Identifie chaque aliment visible et estime sa quantité ainsi que ses valeurs nutritionnelles.${hintLine}
-Réponds UNIQUEMENT avec un tableau JSON valide, sans aucun texte autour, dans ce format exact :
-[{"name":"Nom","qty":150,"unit":"g","kcal":200,"prot":12,"carbs":25,"fats":6}]
-Règles : utilise "g" ou "ml" comme unit. Maximum 8 aliments. Valeurs réalistes pour la portion visible.`,
+              text: `Tu es un expert en nutrition. Analyse cette photo et identifie chaque aliment visible.${hintSection}
+
+Pour chaque aliment, retourne les macros TOTALES pour la quantité effectivement consommée (pas par 100g).
+Priorité pour estimer les valeurs nutritionnelles :
+1. Si un tableau nutritionnel est lisible sur l'emballage → utilise ces valeurs exactes.
+2. Sinon, identifie le produit (marque, type) depuis l'emballage et utilise tes connaissances nutritionnelles pour estimer.
+3. Si aucun emballage → estime visuellement la portion et les macros typiques de cet aliment.
+Unités acceptées : "g", "ml", "pièce", "tranche", "portion".
+
+Réponds UNIQUEMENT avec un tableau JSON valide, sans texte autour :
+[{"name":"Nom de l'aliment","qty":3,"unit":"pièce","kcal":180,"prot":1.5,"carbs":36,"fats":3}]
+
+Maximum 8 aliments. Valeurs réalistes.`,
             },
           ],
         }],
