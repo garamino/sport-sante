@@ -799,7 +799,10 @@ function openAddModal(sectionKey) {
     el.innerHTML = `
       <div class="nut-recents-row">
         ${_recents.map(f => `<button class="nut-recent-chip" data-id="${f.id}">${f.name}</button>`).join('')}
-      </div>`;
+      </div>
+      <button id="nut-copy-day-btn" style="margin-top:12px;width:100%;padding:8px;background:transparent;border:1px dashed var(--border);border-radius:var(--radius-sm);color:var(--text-secondary);font-size:12px;cursor:pointer">
+        📅 Copier depuis un autre jour…
+      </button>`;
     el.querySelectorAll('.nut-recent-chip').forEach(chip => {
       chip.addEventListener('click', () => {
         const f = _recents.find(x => x.id === chip.dataset.id);
@@ -810,6 +813,7 @@ function openAddModal(sectionKey) {
         });
       });
     });
+    el.querySelector('#nut-copy-day-btn').addEventListener('click', () => showCopyFromDay(el));
   }
 
   // ── Recherche Open Food Facts ─────────────────────────────────────────────
@@ -950,7 +954,8 @@ function openAddModal(sectionKey) {
       </div>
 
       <div id="nut-photo-step-preview" style="display:none">
-        <img id="nut-photo-img" style="width:100%;max-height:200px;object-fit:cover;border-radius:var(--radius-sm);margin-bottom:12px">
+        <img id="nut-photo-img" style="width:100%;max-height:180px;object-fit:cover;border-radius:var(--radius-sm);margin-bottom:10px">
+        <textarea id="nut-photo-hint" rows="2" placeholder="Instruction optionnelle… (ex: décompose en plusieurs articles, donne-moi le plat complet)" style="width:100%;resize:none;font-size:12px;margin-bottom:10px;box-sizing:border-box"></textarea>
         <div style="display:flex;gap:8px">
           <button id="nut-photo-retry" class="btn" style="flex:1">↩ Rechoisir</button>
           <button id="nut-photo-analyze" class="btn btn-primary" style="flex:2">✨ Analyser</button>
@@ -1001,6 +1006,7 @@ function openAddModal(sectionKey) {
 
     el.querySelector('#nut-photo-analyze').addEventListener('click', async () => {
       if (!photoBase64) return;
+      const hint = el.querySelector('#nut-photo-hint').value.trim();
       goTo('loading');
       try {
         const apiKey = await getApiKey();
@@ -1009,7 +1015,7 @@ function openAddModal(sectionKey) {
           showToast('Configure ta clé API Gemini dans ⚙️ Paramètres');
           return;
         }
-        const foods = await analyzePhotoWithGemini(photoBase64, photoMediaType, apiKey);
+        const foods = await analyzePhotoWithGemini(photoBase64, photoMediaType, apiKey, hint);
         renderPhotoResults(stepResults, foods);
         goTo('results');
       } catch (err) {
@@ -1019,8 +1025,9 @@ function openAddModal(sectionKey) {
     });
   }
 
-  async function analyzePhotoWithGemini(base64, mediaType, apiKey) {
+  async function analyzePhotoWithGemini(base64, mediaType, apiKey, hint = '') {
     const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
+    const hintLine = hint ? `\nInstruction supplémentaire de l'utilisateur : ${hint}` : '';
 
     const res = await fetch(endpoint, {
       method: 'POST',
@@ -1030,7 +1037,7 @@ function openAddModal(sectionKey) {
           parts: [
             { inline_data: { mime_type: mediaType, data: base64 } },
             {
-              text: `Analyse cette photo de repas. Identifie chaque aliment visible et estime sa quantité ainsi que ses valeurs nutritionnelles.
+              text: `Analyse cette photo de repas. Identifie chaque aliment visible et estime sa quantité ainsi que ses valeurs nutritionnelles.${hintLine}
 Réponds UNIQUEMENT avec un tableau JSON valide, sans aucun texte autour, dans ce format exact :
 [{"name":"Nom","qty":150,"unit":"g","kcal":200,"prot":12,"carbs":25,"fats":6}]
 Règles : utilise "g" ou "ml" comme unit. Maximum 8 aliments. Valeurs réalistes pour la portion visible.`,
@@ -1123,6 +1130,66 @@ Règles : utilise "g" ou "ml" comme unit. Maximum 8 aliments. Valeurs réalistes
         });
       }
     });
+  }
+
+  // ── Copier depuis un jour précédent ──────────────────────────────────────
+  function showCopyFromDay(el) {
+    let copyDate = addDays(currentDate, -1);
+
+    async function renderCopy() {
+      el.innerHTML = `
+        <div class="date-nav" style="margin-bottom:12px;margin-top:0">
+          <button id="copy-prev">‹</button>
+          <span class="current-date" style="font-size:13px">${formatDateFR(copyDate)}</span>
+          <button id="copy-next">›</button>
+        </div>
+        <div id="copy-day-content" style="min-height:60px">
+          <div class="spinner" style="margin:16px auto;width:20px;height:20px"></div>
+        </div>`;
+
+      el.querySelector('#copy-prev').addEventListener('click', () => {
+        copyDate = addDays(copyDate, -1);
+        renderCopy();
+      });
+      el.querySelector('#copy-next').addEventListener('click', () => {
+        if (copyDate >= currentDate) return;
+        copyDate = addDays(copyDate, 1);
+        renderCopy();
+      });
+
+      const dayData = await getNutrition(copyDate).catch(() => null);
+      const content = el.querySelector('#copy-day-content');
+      const items = dayData?.sections?.[sectionKey] || [];
+
+      if (!items.length) {
+        content.innerHTML = `<p style="font-size:13px;color:var(--text-secondary);text-align:center;padding:16px 0">Aucun aliment dans cette section ce jour-là.</p>`;
+        return;
+      }
+
+      content.innerHTML = items.map((item, i) => `
+        <div class="nut-result-item" style="display:flex;align-items:center;gap:8px" data-idx="${i}">
+          <div style="min-width:0;flex:1">
+            <div class="nut-result-name">${item.name}${item.brand ? `<span class="nut-food-brand"> · ${item.brand}</span>` : ''}</div>
+            <div class="nut-result-meta">${item.qty}${item.unit} · ${Math.round(item.kcal)} kcal · P:${item.prot}g · G:${item.carbs}g · L:${item.fats}g</div>
+          </div>
+          <button class="btn-icon copy-add-btn" data-idx="${i}" title="Ajouter" style="width:28px;height:28px;flex-shrink:0;border:1px solid var(--accent);border-radius:6px;color:var(--accent)">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+              <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+            </svg>
+          </button>
+        </div>`).join('');
+
+      content.querySelectorAll('.copy-add-btn').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          const { id: _id, ...item } = items[parseInt(btn.dataset.idx)];
+          btn.disabled = true;
+          btn.innerHTML = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--success)" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>`;
+          await addEntry(item);
+        });
+      });
+    }
+
+    renderCopy();
   }
 
   // ── Manuel ────────────────────────────────────────────────────────────────

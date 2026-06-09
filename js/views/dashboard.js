@@ -5,47 +5,138 @@ import { showCoachAdvice, openCoachHistory, openCoachNotesModal } from '../coach
 function getWeekDates(todayStr) {
   const dow = getDayOfWeek(todayStr);
   const monday = addDays(todayStr, -(dow - 1));
-  return Array.from({ length: dow }, (_, i) => addDays(monday, i));
+  return Array.from({ length: 7 }, (_, i) => addDays(monday, i));
 }
 
-function buildWeekNarrative(workouts, sleepEntries, mondayStr) {
-  const C_OK = 'var(--success)';
+function fmtShortDate(dateStr) {
+  const [, m, d] = dateStr.split('-');
+  return `${d}/${m}`;
+}
+
+function fmtHours(h) {
+  const hh = Math.floor(h);
+  const mm = Math.round((h - hh) * 60);
+  return mm > 0 ? `${hh}h${String(mm).padStart(2, '0')}` : `${hh}h`;
+}
+
+function buildWeekVisual(weekDates, weekWorkouts, weekSleeps, weekNuts, goals, todayStr) {
+  const DAY_ABBREV = ['L', 'M', 'Me', 'J', 'V', 'S', 'D'];
+  const C_OK   = '#66bb6a';
   const C_WARN = '#ffa726';
-  const C_BAD = 'var(--danger)';
+  const C_BAD  = '#ef5350';
+  const C_EMPTY = 'var(--border)';
 
-  const muscuDone = workouts.filter(w => w?.dayType === 'muscu' && w.exercises?.some(e => e.done)).length;
-  const veloDone = workouts.filter(w => w && (w.dayType === 'velo' || w.extraActivities?.includes('velo')) && w.bikeData).length;
+  // ── Entraînements ──────────────────────────────────────────────────────────
+  const workoutCells = weekDates.map((d, i) => {
+    const w = weekWorkouts[i];
+    const isFuture = d > todayStr;
+    let icon = '·';
+    let dotColor = C_EMPTY;
 
-  const weekSleeps = sleepEntries.filter(s => s.date >= mondayStr);
-  const avgHours = weekSleeps.length
-    ? weekSleeps.reduce((acc, e) => acc + (e.hoursSlept || 0), 0) / weekSleeps.length
-    : null;
-  const avgQuality = weekSleeps.length
-    ? weekSleeps.reduce((acc, e) => acc + (e.quality || 0), 0) / weekSleeps.length
-    : null;
-  const shortNights = weekSleeps.filter(s => s.hoursSlept && s.hoursSlept < 7).length;
+    if (w) {
+      if (w.dayType === 'rest') {
+        icon = '♻️'; dotColor = 'var(--text-secondary)';
+      } else if (w.dayType === 'velo' || w.extraActivities?.includes('velo')) {
+        icon = '🚴'; dotColor = w.bikeData ? C_OK : C_WARN;
+      } else if (w.dayType === 'muscu') {
+        const done = w.exercises?.some(e => e.done);
+        icon = '💪'; dotColor = done ? C_OK : C_WARN;
+      }
+    }
 
-  const lines = [];
+    return `
+      <div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;opacity:${isFuture ? '0.35' : '1'}">
+        <span style="font-size:17px;line-height:1.2">${icon === '·' ? '' : icon}</span>
+        <div style="width:7px;height:7px;border-radius:50%;background:${dotColor}"></div>
+        <span style="font-size:9px;color:var(--text-secondary)">${DAY_ABBREV[i]}</span>
+      </div>`;
+  }).join('');
 
-  const parts = [];
-  if (muscuDone > 0) parts.push(`💪 ${muscuDone} muscu`);
-  if (veloDone > 0) parts.push(`🚴 ${veloDone} vélo`);
-  lines.push(parts.length ? parts.join(' · ') : 'Aucune séance complète pour l\'instant');
+  // ── Sommeil ────────────────────────────────────────────────────────────────
+  const validSleeps = weekSleeps.filter(s => s?.hoursSlept);
+  const avgHours   = validSleeps.length ? validSleeps.reduce((a, s) => a + s.hoursSlept, 0) / validSleeps.length : null;
+  const avgQuality = validSleeps.length ? validSleeps.reduce((a, s) => a + (s.quality || 0), 0) / validSleeps.length : null;
+  const shortNights = validSleeps.filter(s => s.hoursSlept < 7).length;
+  const maxSleepH = 9;
 
-  if (avgHours !== null) {
-    const h = Math.floor(avgHours);
-    const m = Math.round((avgHours - h) * 60);
-    const hhmm = m > 0 ? `${h}h${String(m).padStart(2, '0')}` : `${h}h`;
-    const hColor = avgHours >= 7 ? C_OK : avgHours >= 6 ? C_WARN : C_BAD;
-    const qColor = avgQuality >= 7 ? C_OK : avgQuality >= 5 ? C_WARN : C_BAD;
-    lines.push(`Sommeil : <span style="color:${hColor};font-weight:600">${hhmm} moy</span> · qualité <span style="color:${qColor};font-weight:600">${avgQuality.toFixed(1)}/10</span>`);
+  const sleepValueRow = weekDates.map((_, i) => {
+    const s = weekSleeps[i];
+    return `<div style="flex:1;text-align:center;font-size:8px;color:var(--text-secondary);height:11px;overflow:hidden">${s?.hoursSlept ? fmtHours(s.hoursSlept) : ''}</div>`;
+  }).join('');
+
+  const sleepBarRow = weekDates.map((d, i) => {
+    const s = weekSleeps[i];
+    const h = s?.hoursSlept || 0;
+    const pct = h ? Math.min(100, (h / maxSleepH) * 100) : 0;
+    const color = !h ? C_EMPTY : h >= 7 ? C_OK : h >= 6 ? C_WARN : C_BAD;
+    return `<div style="flex:1;height:${pct > 0 ? Math.max(pct, 4) : 2}%;background:${color};border-radius:2px 2px 0 0;opacity:${d > todayStr ? '0.35' : '1'}"></div>`;
+  }).join('');
+
+  const sleepLabelRow = DAY_ABBREV.map(l =>
+    `<div style="flex:1;text-align:center;font-size:9px;color:var(--text-secondary)">${l}</div>`
+  ).join('');
+
+  const sleepSummary = avgHours
+    ? `<span style="font-size:11px;color:var(--text-secondary)">${fmtHours(avgHours)} moy · ${avgQuality.toFixed(1)}/10${shortNights >= 2 ? ` · <span style="color:#ef9a9a">⚠ ${shortNights} nuits &lt;7h</span>` : ''}</span>`
+    : `<span style="font-size:11px;color:var(--text-secondary)">—</span>`;
+
+  // ── Nutrition ──────────────────────────────────────────────────────────────
+  const kcalGoal = goals?.kcal || 2500;
+
+  function dayKcal(n) {
+    if (!n) return 0;
+    return Math.round(Object.values(n.sections || {}).flat().reduce((a, i) => a + (i.kcal || 0), 0));
   }
 
-  if (shortNights >= 2) {
-    lines.push(`<span style="color:#ef9a9a">⚠ ${shortNights} nuit${shortNights > 1 ? 's' : ''} sous 7h</span>`);
-  }
+  const validNuts = weekNuts.filter(n => n && dayKcal(n) > 0);
+  const avgKcal = validNuts.length
+    ? Math.round(validNuts.reduce((a, n) => a + dayKcal(n), 0) / validNuts.length)
+    : null;
 
-  return lines;
+  const nutValueRow = weekDates.map((_, i) => {
+    const k = dayKcal(weekNuts[i]);
+    return `<div style="flex:1;text-align:center;font-size:8px;color:var(--text-secondary);height:11px;overflow:hidden">${k > 0 ? k : ''}</div>`;
+  }).join('');
+
+  const nutBarRow = weekDates.map((d, i) => {
+    const k = dayKcal(weekNuts[i]);
+    const pct = k > 0 ? Math.min(110, (k / kcalGoal) * 100) : 0;
+    const ratio = k / kcalGoal;
+    const color = k === 0 ? C_EMPTY : ratio >= 0.9 && ratio <= 1.15 ? C_OK : ratio >= 0.7 ? C_WARN : C_BAD;
+    return `<div style="flex:1;height:${pct > 0 ? Math.max(pct, 4) : 2}%;background:${color};border-radius:2px 2px 0 0;opacity:${d > todayStr ? '0.35' : '1'}"></div>`;
+  }).join('');
+
+  const nutSummary = avgKcal
+    ? `<span style="font-size:11px;color:var(--text-secondary)">${avgKcal} kcal moy · obj ${kcalGoal}</span>`
+    : `<span style="font-size:11px;color:var(--text-secondary)">—</span>`;
+
+  return `
+    <div style="margin-bottom:14px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+        <span style="font-size:11px;font-weight:600;color:var(--text-secondary);text-transform:uppercase;letter-spacing:.05em">🏋️ Entraînements</span>
+      </div>
+      <div style="display:flex;gap:2px">${workoutCells}</div>
+    </div>
+
+    <div style="margin-bottom:14px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+        <span style="font-size:11px;font-weight:600;color:var(--text-secondary);text-transform:uppercase;letter-spacing:.05em">😴 Sommeil</span>
+        ${sleepSummary}
+      </div>
+      <div style="display:flex;gap:3px;margin-bottom:3px">${sleepValueRow}</div>
+      <div style="display:flex;gap:3px;align-items:flex-end;height:36px">${sleepBarRow}</div>
+      <div style="display:flex;gap:3px;margin-top:3px">${sleepLabelRow}</div>
+    </div>
+
+    <div>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+        <span style="font-size:11px;font-weight:600;color:var(--text-secondary);text-transform:uppercase;letter-spacing:.05em">🍽️ Nutrition</span>
+        ${nutSummary}
+      </div>
+      <div style="display:flex;gap:3px;margin-bottom:3px">${nutValueRow}</div>
+      <div style="display:flex;gap:3px;align-items:flex-end;height:36px">${nutBarRow}</div>
+      <div style="display:flex;gap:3px;margin-top:3px">${sleepLabelRow}</div>
+    </div>`;
 }
 
 export async function render(container) {
@@ -56,7 +147,7 @@ export async function render(container) {
     const weekDates = getWeekDates(todayStr);
     const mondayStr = weekDates[0];
 
-    const [profile, workout, sleep, recentSleep, lastWeeklies, nutData, nutGoals, ...weekWorkouts] = await Promise.all([
+    const [profile, workout, sleep, recentSleep, lastWeeklies, nutData, nutGoals, weekWorkouts, weekSleeps, weekNuts] = await Promise.all([
       getUserProfile().catch(() => null),
       getWorkout(todayStr).catch(() => null),
       getSleep(todayStr).catch(() => null),
@@ -64,7 +155,9 @@ export async function render(container) {
       getLastWeeklies(3).catch(() => []),
       getNutrition(todayStr).catch(() => null),
       getNutritionGoals().catch(() => null),
-      ...weekDates.map(d => getWorkout(d).catch(() => null)),
+      Promise.all(weekDates.map(d => getWorkout(d).catch(() => null))),
+      Promise.all(weekDates.map(d => getSleep(d).catch(() => null))),
+      Promise.all(weekDates.map(d => getNutrition(d).catch(() => null))),
     ]);
 
     // Weight delta vs previous weekly entry
@@ -78,7 +171,8 @@ export async function render(container) {
     const deltaArrow = deltaWeight > 0 ? '↑' : '↓';
     const deltaColor = deltaWeight === 0 ? 'var(--text-secondary)' : deltaWeight > 0 ? 'var(--success)' : 'var(--danger)';
 
-    const weekNarrative = buildWeekNarrative(weekWorkouts, recentSleep, mondayStr);
+    const sundayStr = addDays(mondayStr, 6);
+    const weekVisual = buildWeekVisual(weekDates, weekWorkouts, weekSleeps, weekNuts, nutGoals, todayStr);
 
     // Nutrition today
     const NUT_DEFAULTS = { kcal: 2500, prot: 160, carbs: 300, fats: 80 };
@@ -177,10 +271,11 @@ export async function render(container) {
       </a>
 
       <div class="card">
-        <div class="card-title">Cette semaine</div>
-        ${weekNarrative.map((line, i) => `
-          <p style="font-size:14px;color:var(--text-secondary);margin:${i > 0 ? '4px 0 0' : '0'}">${line}</p>
-        `).join('')}
+        <div style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:14px">
+          <div class="card-title" style="margin:0">Cette semaine</div>
+          <span style="font-size:11px;color:var(--text-secondary)">${fmtShortDate(mondayStr)} – ${fmtShortDate(sundayStr)}</span>
+        </div>
+        ${weekVisual}
       </div>
 
       <div class="section-title">Actions rapides</div>

@@ -271,6 +271,12 @@ export async function getNutrition(date) {
   return snap.exists() ? snap.data() : null;
 }
 
+export async function getAllNutrition() {
+  const q = query(userCollection('nutrition'), orderBy('date', 'asc'));
+  const snap = await getDocs(q);
+  return snap.docs.map(d => d.data());
+}
+
 export async function saveNutrition(date, data) {
   await setDoc(userDoc(`nutrition/${date}`), { ...data, date, savedAt: Timestamp.now() });
 }

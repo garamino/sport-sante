@@ -1,4 +1,4 @@
-import { getAllWeeklies, getAllSleep, getAllWorkouts, getAllIntakes } from '../db.js';
+import { getAllWeeklies, getAllSleep, getAllWorkouts, getAllIntakes, getAllNutrition, getNutritionGoals } from '../db.js';
 import { NIGHT_CUTOFF } from '../utils.js';
 
 const SLEEP_PRODUCTS = [
@@ -142,6 +142,9 @@ let currentSleepQualityPeriod = '3m';
 let currentMedsView = 'products'; // 'products' | 'ingredients'
 let currentIngredientPeriod = '3m';
 let currentIngredient = 'all';
+let currentNutritionPeriod = '1m';
+let currentNutritionMetric = 'kcal'; // 'kcal' | 'prot' | 'carbs' | 'fats'
+let nutChartInstance = null;
 
 let chartInstance = null;
 let perfChartInstance = null;
@@ -154,6 +157,7 @@ export async function render(container) {
       <button class="chart-tab" data-chart="weight">Poids</button>
       <button class="chart-tab active" data-chart="sleep">Sommeil</button>
       <button class="chart-tab" data-chart="bike">Vélo</button>
+      <button class="chart-tab" data-chart="nutrition">Nutrition</button>
     </div>
     <div id="chart-area"></div>
   `;
@@ -183,6 +187,7 @@ async function renderChart(type) {
   if (chartInstance) { chartInstance.destroy(); chartInstance = null; }
   if (perfChartInstance) { perfChartInstance.destroy(); perfChartInstance = null; }
   if (medsChartInstance) { medsChartInstance.destroy(); medsChartInstance = null; }
+  if (nutChartInstance) { nutChartInstance.destroy(); nutChartInstance = null; }
 
   const chartColors = {
     accent: '#4fc3f7',
@@ -450,6 +455,55 @@ async function renderChart(type) {
       });
 
       renderBikeSubChart('efficacite', bikeData, chartColors, baseOptions);
+    } else if (type === 'nutrition') {
+      const [allNut, goals] = await Promise.all([
+        getAllNutrition(),
+        getNutritionGoals().catch(() => null),
+      ]);
+
+      if (allNut.length === 0) {
+        area.innerHTML = `
+          <div class="empty-state">
+            <p>Pas encore de données</p>
+            <p style="font-size:13px;color:var(--text-secondary)">Commence à logger ta nutrition !</p>
+          </div>`;
+        return;
+      }
+
+      area.innerHTML = `
+        <div class="chart-subtabs">
+          <button class="chart-subtab ${currentNutritionMetric === 'kcal'  ? 'active' : ''}" data-metric="kcal">Calories</button>
+          <button class="chart-subtab ${currentNutritionMetric === 'prot'  ? 'active' : ''}" data-metric="prot">Protéines</button>
+          <button class="chart-subtab ${currentNutritionMetric === 'carbs' ? 'active' : ''}" data-metric="carbs">Glucides</button>
+          <button class="chart-subtab ${currentNutritionMetric === 'fats'  ? 'active' : ''}" data-metric="fats">Lipides</button>
+        </div>
+        <div class="period-buttons" id="nut-period-buttons"></div>
+        <div class="chart-container"><canvas id="nut-chart"></canvas></div>
+        <div id="nut-summary" style="margin-top:16px"></div>
+      `;
+
+      area.querySelectorAll('.chart-subtab').forEach(st => {
+        st.addEventListener('click', () => {
+          currentNutritionMetric = st.dataset.metric;
+          area.querySelectorAll('.chart-subtab').forEach(s => s.classList.remove('active'));
+          st.classList.add('active');
+          renderNutritionChart(allNut, goals, chartColors, baseOptions);
+        });
+      });
+
+      const pb = document.getElementById('nut-period-buttons');
+      pb.innerHTML = ['1m', '3m', 'all'].map(p =>
+        `<button class="period-btn ${p === currentNutritionPeriod ? 'active' : ''}" data-period="${p}">${PERIOD_LABELS[p]}</button>`
+      ).join('');
+      pb.querySelectorAll('.period-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          currentNutritionPeriod = btn.dataset.period;
+          pb.querySelectorAll('.period-btn').forEach(b => b.classList.toggle('active', b.dataset.period === currentNutritionPeriod));
+          renderNutritionChart(allNut, goals, chartColors, baseOptions);
+        });
+      });
+
+      renderNutritionChart(allNut, goals, chartColors, baseOptions);
     }
   } catch (e) {
     console.error('Chart error:', e);
@@ -1423,6 +1477,143 @@ function showMoonPhaseModal({ icon, label, avg, nights }) {
   document.body.appendChild(overlay);
   // Force reflow pour l'animation
   requestAnimationFrame(() => overlay.classList.add('moon-modal-overlay--visible'));
+}
+
+// ── Nutrition chart ───────────────────────────────────────────────────────────
+
+const NUT_METRICS = {
+  kcal:  { label: 'Calories', unit: 'kcal', color: '#4fc3f7' },
+  prot:  { label: 'Protéines', unit: 'g',   color: '#ab47bc' },
+  carbs: { label: 'Glucides',  unit: 'g',   color: '#ffa726' },
+  fats:  { label: 'Lipides',   unit: 'g',   color: '#66bb6a' },
+};
+
+const DEFAULT_NUT_GOALS = { kcal: 2500, prot: 160, carbs: 300, fats: 80 };
+
+function renderNutritionChart(allNut, goals, colors, baseOptions) {
+  if (nutChartInstance) { nutChartInstance.destroy(); nutChartInstance = null; }
+
+  const canvas = document.getElementById('nut-chart');
+  const summaryEl = document.getElementById('nut-summary');
+  if (!canvas) return;
+
+  const g = { ...DEFAULT_NUT_GOALS, ...(goals || {}) };
+  const metric = currentNutritionMetric;
+  const { label, unit, color } = NUT_METRICS[metric];
+  const goal = g[metric];
+
+  // Aggregation par jour
+  const days = filterByPeriod(allNut.map(doc => {
+    const items = Object.values(doc.sections || {}).flat();
+    const total = items.reduce((acc, i) => acc + (i[metric] || 0), 0);
+    return { date: doc.date, value: metric === 'kcal' ? Math.round(total) : +total.toFixed(1) };
+  }), currentNutritionPeriod);
+
+  const labels = days.map(d => {
+    const dt = new Date(d.date + 'T12:00:00');
+    return dt.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' });
+  });
+
+  const values = days.map(d => d.value);
+
+  // Couleur par barre selon % de l'objectif
+  const barColors = values.map(v => {
+    const pct = goal > 0 ? v / goal : 0;
+    if (pct >= 0.9 && pct <= 1.15) return '#66bb6a'; // dans l'objectif
+    if (pct >= 0.75 || pct <= 1.3)  return '#ffa726'; // proche
+    return '#ef5350';                                   // loin
+  });
+
+  // Ligne objectif (dataset ligne plate)
+  const goalLine = days.map(() => goal);
+
+  nutChartInstance = new Chart(canvas.getContext('2d'), {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [
+        {
+          label,
+          data: values,
+          backgroundColor: barColors,
+          borderRadius: 4,
+          order: 2,
+        },
+        {
+          type: 'line',
+          label: `Objectif (${goal} ${unit})`,
+          data: goalLine,
+          borderColor: color,
+          borderDash: [6, 4],
+          borderWidth: 2,
+          pointRadius: 0,
+          fill: false,
+          tension: 0,
+          order: 1,
+        },
+      ],
+    },
+    options: {
+      ...baseOptions,
+      plugins: {
+        legend: {
+          display: true,
+          labels: { color: colors.text, usePointStyle: true, font: { size: 11 } },
+        },
+        tooltip: {
+          callbacks: {
+            title: (items) => {
+              const d = days[items[0]?.dataIndex];
+              if (!d) return '';
+              const dt = new Date(d.date + 'T12:00:00');
+              return dt.toLocaleDateString('fr-FR', { weekday: 'short', day: 'numeric', month: 'long' });
+            },
+            label: (ctx) => {
+              if (ctx.datasetIndex === 1) return `Objectif : ${goal} ${unit}`;
+              const v = ctx.raw;
+              const pct = goal > 0 ? Math.round(v / goal * 100) : '—';
+              return `${label} : ${v} ${unit} (${pct}%)`;
+            },
+          },
+        },
+      },
+      scales: {
+        x: baseOptions.scales.x,
+        y: {
+          ...baseOptions.scales.y,
+          beginAtZero: true,
+          title: { display: true, text: unit, color: colors.text },
+        },
+      },
+    },
+  });
+
+  // Résumé stats
+  if (summaryEl && values.length > 0) {
+    const avg = Math.round(values.reduce((a, b) => a + b, 0) / values.length);
+    const max = Math.max(...values);
+    const min = Math.min(...values);
+    const daysOnTarget = values.filter(v => goal > 0 && v / goal >= 0.9 && v / goal <= 1.15).length;
+    summaryEl.innerHTML = `
+      <div class="perf-metrics">
+        <div class="perf-metric-card">
+          <div class="perf-metric-value">${avg}</div>
+          <div class="perf-metric-label">Moyenne / jour</div>
+        </div>
+        <div class="perf-metric-card">
+          <div class="perf-metric-value" style="color:#66bb6a">${daysOnTarget}</div>
+          <div class="perf-metric-label">Jours dans l'objectif</div>
+        </div>
+        <div class="perf-metric-card">
+          <div class="perf-metric-value">${max}</div>
+          <div class="perf-metric-label">Max</div>
+        </div>
+        <div class="perf-metric-card">
+          <div class="perf-metric-value">${min}</div>
+          <div class="perf-metric-label">Min</div>
+        </div>
+      </div>`;
+  }
 }
 
 function loadScript(src) {
