@@ -1,5 +1,5 @@
 import { today, formatDateFR, getDayOfWeek, addDays } from '../utils.js';
-import { getUserProfile, getWorkout, getSleep, getRecentSleep, getLastWeeklies, getNutrition, getNutritionGoals } from '../db.js';
+import { getUserProfile, getWorkout, getSleep, getRecentSleep, getLastWeeklies, getNutrition, getNutritionGoals, getHydration, getHydrationGoal } from '../db.js';
 import { showCoachAdvice, openCoachHistory, openCoachNotesModal } from '../coach.js';
 
 function getWeekDates(todayStr) {
@@ -147,7 +147,7 @@ export async function render(container) {
     const weekDates = getWeekDates(todayStr);
     const mondayStr = weekDates[0];
 
-    const [profile, workout, sleep, recentSleep, lastWeeklies, nutData, nutGoals, weekWorkouts, weekSleeps, weekNuts] = await Promise.all([
+    const [profile, workout, sleep, recentSleep, lastWeeklies, nutData, nutGoals, hydData, hydGoal, weekWorkouts, weekSleeps, weekNuts] = await Promise.all([
       getUserProfile().catch(() => null),
       getWorkout(todayStr).catch(() => null),
       getSleep(todayStr).catch(() => null),
@@ -155,6 +155,8 @@ export async function render(container) {
       getLastWeeklies(3).catch(() => []),
       getNutrition(todayStr).catch(() => null),
       getNutritionGoals().catch(() => null),
+      getHydration(todayStr).catch(() => null),
+      getHydrationGoal().catch(() => 2000),
       Promise.all(weekDates.map(d => getWorkout(d).catch(() => null))),
       Promise.all(weekDates.map(d => getSleep(d).catch(() => null))),
       Promise.all(weekDates.map(d => getNutrition(d).catch(() => null))),
@@ -186,6 +188,18 @@ export async function render(container) {
     const nutPct    = Math.min(100, goals.kcal > 0 ? (nutKcal / goals.kcal) * 100 : 0);
     const nutColor  = nutPct >= 100 ? 'var(--danger)' : nutPct >= 80 ? 'var(--success)' : 'var(--accent)';
     const hasNut    = allNutItems.length > 0;
+
+    // Hydration today
+    const hydEntries = hydData?.entries || [];
+    const hydWater = hydEntries.reduce((s, e) => s + (e.ml || 0), 0);
+    const hydNutLiquids = nutData
+      ? Object.values(nutData.sections || {}).flat().filter(i => i.unit === 'ml' && i.qty > 0)
+      : [];
+    const hydOther = hydNutLiquids.reduce((s, i) => s + (i.qty || 0), 0);
+    const hydTotal = hydWater + hydOther;
+    const hydPctWater = hydGoal > 0 ? Math.min(100, (hydWater / hydGoal) * 100) : 0;
+    const hydPctOther = hydGoal > 0 ? Math.min(100 - hydPctWater, (hydOther / hydGoal) * 100) : 0;
+    const hydColor = hydTotal >= hydGoal ? 'var(--success)' : hydTotal >= hydGoal * 0.5 ? 'var(--accent)' : 'var(--text-secondary)';
 
     // Workout summary for today
     const doneCount = workout?.exercises?.filter(e => e.done).length || 0;
@@ -270,6 +284,27 @@ export async function render(container) {
         </div>
       </a>
 
+      <a href="#/hydration" class="card" style="display:block;text-decoration:none;color:inherit">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+          <div class="card-title" style="margin:0">💧 Hydratation</div>
+          <span style="font-size:13px;font-weight:600;color:${hydColor}">
+            ${hydTotal >= 1000 ? (hydTotal / 1000).toFixed(1).replace('.', ',') + ' L' : hydTotal + ' ml'}
+            <span style="color:var(--text-secondary);font-weight:400;font-size:12px"> / ${hydGoal >= 1000 ? (hydGoal / 1000).toFixed(1).replace('.', ',') + ' L' : hydGoal + ' ml'}</span>
+          </span>
+        </div>
+        <div style="height:6px;background:var(--bg-primary);border-radius:3px;overflow:hidden;margin-bottom:8px;position:relative">
+          <div style="position:absolute;left:0;top:0;height:100%;width:${hydPctWater}%;background:#4fc3f7;border-radius:3px 0 0 3px;transition:width .3s"></div>
+          <div style="position:absolute;left:${hydPctWater}%;top:0;height:100%;width:${hydPctOther}%;background:#ffa726;transition:width .3s"></div>
+        </div>
+        <div style="display:flex;justify-content:space-between;font-size:12px">
+          <div style="display:flex;gap:12px">
+            <span style="color:var(--text-secondary)">💧 <b style="color:#4fc3f7">${hydWater} ml</b></span>
+            ${hydOther > 0 ? `<span style="color:var(--text-secondary)">🧃 <b style="color:#ffa726">${hydOther} ml</b></span>` : ''}
+          </div>
+          <span style="color:var(--accent);font-size:11px">${hydTotal > 0 ? 'Voir détail →' : 'Ajouter →'}</span>
+        </div>
+      </a>
+
       <div class="card">
         <div style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:14px">
           <div class="card-title" style="margin:0">Cette semaine</div>
@@ -295,6 +330,10 @@ export async function render(container) {
         <a href="#/intakes" class="quick-action">
           <div class="quick-action-icon" style="background:#26a69a">💊</div>
           <span>Mes prises</span>
+        </a>
+        <a href="#/hydration" class="quick-action">
+          <div class="quick-action-icon" style="background:#0288d1">💧</div>
+          <span>Ajouter eau</span>
         </a>
       </div>
 

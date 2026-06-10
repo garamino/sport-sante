@@ -64,21 +64,6 @@ export async function render(container, resetDate = true) {
 
       <div class="section-title" style="margin-top:20px">Semaine ${weekNum} — ${phase}</div>
 
-      <div class="week-summary">
-        <div class="week-summary-item">
-          <div class="week-summary-value" style="color:var(--accent)">${muscu.length}/4</div>
-          <div class="week-summary-label">Musculation</div>
-        </div>
-        <div class="week-summary-item">
-          <div class="week-summary-value" style="color:var(--accent)">${velo.length}/2</div>
-          <div class="week-summary-label">Vélo</div>
-        </div>
-        <div class="week-summary-item">
-          <div class="week-summary-value" style="color:var(--accent)">${weekly?.weight ? weekly.weight + ' kg' : '—'}</div>
-          <div class="week-summary-label">Poids semaine</div>
-        </div>
-      </div>
-
       ${prevWeekly?.weight && weekly?.weight ? `
         <div class="card" style="text-align:center">
           <span style="font-size:13px;color:var(--text-secondary)">Delta semaine : </span>

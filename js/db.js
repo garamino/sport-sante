@@ -316,6 +316,25 @@ export async function saveNutritionFood(data) {
   }
 }
 
+// === Hydration ===
+export async function getHydration(date) {
+  const snap = await getDoc(userDoc(`hydration/${date}`));
+  return snap.exists() ? snap.data() : null;
+}
+
+export async function saveHydration(date, data) {
+  await setDoc(userDoc(`hydration/${date}`), { ...data, date, savedAt: Timestamp.now() });
+}
+
+export async function getHydrationGoal() {
+  const snap = await getDoc(userDoc('settings/hydrationGoal'));
+  return snap.exists() ? snap.data().ml : 2000;
+}
+
+export async function saveHydrationGoal(ml) {
+  await setDoc(userDoc('settings/hydrationGoal'), { ml, savedAt: Timestamp.now() });
+}
+
 // === Health Documents ===
 export async function uploadHealthFile(file) {
   const uid = getUid();

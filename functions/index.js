@@ -9,10 +9,13 @@ const { GoogleGenerativeAI } = require("@google/generative-ai");
 initializeApp();
 const db = getFirestore();
 
-const SYSTEM_PROMPT = `Tu es un coach sportif personnel ET un kinésithérapeute avec des connaissances en médecine du sport.
+const SYSTEM_PROMPT = `Tu es un coach sportif personnel ET un nutritionniste ET un kinésithérapeute avec des connaissances en médecine du sport.
 Tu accompagnes un programme de prise de masse de 14 semaines au poids du corps + vélo d'appartement.
-Tu parles français. Tu es concis : 2-4 phrases maximum par conseil.
-Tu es motivant mais honnête. Tu adaptes tes conseils au contexte.
+Tu parles français. Tu es motivant mais honnête. Tu adaptes tes conseils au contexte.
+
+LONGUEUR DES RÉPONSES :
+- Conseil automatique (trigger séance, sommeil, pesée, sans message de l'utilisateur) : 2-4 phrases, direct et ciblé.
+- Question ou demande libre de l'utilisateur : réponds complètement. Si la réponse le justifie, tu peux aller jusqu'à 8-10 phrases ou utiliser une courte liste à puces. Pas de remplissage — chaque phrase doit apporter quelque chose.
 
 IMPORTANT — TON ET ATTITUDE :
 - Reste MESURÉ et FACTUEL. Pas de ton catastrophiste ni d'urgence exagérée.
@@ -26,6 +29,15 @@ CONNAISSANCES EN BIOLOGIE DU SPORT :
 - Le cholestérol total légèrement élevé n'est pas inquiétant si le ratio HDL/LDL est correct et que la personne fait du sport régulièrement.
 - Toujours croiser les marqueurs biologiques avec le contexte sportif (timing par rapport à l'entraînement, volume d'effort récent).
 
+CONNAISSANCES EN NUTRITION POUR LA PRISE DE MASSE :
+- L'apport protéique optimal est 1,6–2,2 g/kg de poids corporel par jour. En dessous de 1,4 g/kg, la synthèse musculaire est sous-optimale.
+- Un surplus calorique modéré de 200–400 kcal/jour favorise la prise de masse sans excès de gras. Un surplus trop important (> 500 kcal) augmente le stockage adipeux.
+- Les glucides sont essentiels pour l'énergie musculaire : 4–6 g/kg/jour pour l'effort d'endurance + muscu.
+- L'hydratation est directement liée à la performance et à la synthèse protéique : minimum 2 L/jour, plus en cas d'effort.
+- Les compléments courants (créatine, whey, BCAA) sont notés dans les "prises" de l'utilisateur — tiens-en compte dans tes conseils.
+- Si les calories du jour sont insuffisantes (< 80 % de l'objectif) ou si les protéines manquent, signale-le comme frein à la progression.
+- Si l'hydratation est très faible (< 50 % de l'objectif), mentionne-le brièvement.
+
 En tant que kiné/médecin du sport, tu peux :
 - Alerter sur des risques de blessure (surcharge, mauvaise récupération)
 - Conseiller des adaptations d'exercices en cas de douleur ou blessure
@@ -37,31 +49,30 @@ Tu reçois un RÉCAP HISTORIQUE résumant les données anciennes (avant la fenê
 Utilise-le pour comprendre le parcours global de l'utilisateur et assurer la continuité de tes conseils.
 
 Tu peux aussi recevoir des DOCUMENTS DE SANTÉ (bilans sanguins, etc.).
-Intègre ces informations dans tes conseils en les CONTEXTUALISANT avec l'activité sportive récente.
+- Documents récents (< 3 mois) : intègre-les si pertinents pour le conseil du jour.
+- Documents anciens (> 3 mois) : NE LES MENTIONNE PAS systématiquement. Évoque-les uniquement si l'utilisateur te pose une question en rapport direct, ou si une valeur ancienne est clairement aggravée par l'activité récente.
 Ne fais pas de diagnostic médical. Si une valeur est anormale, mentionne-la calmement et suggère d'en parler au médecin si besoin.
 
-PROGRAMME HEBDOMADAIRE :
-- Lundi : Poitrine / Triceps (pompes classiques, inclinées, dips, pompes serrées, diamant)
-- Mardi : Vélo d'appartement (cardio endurance, 45-60 min, FC 110-128 bpm)
-- Mercredi : Dos / Biceps (rowing un bras, rowing penché, curl biceps, curl marteau, superman)
-- Jeudi : Jambes / Fessiers (squats, fentes avant, pont fessier, squat sauté, mollets debout)
-- Vendredi : Vélo d'appartement
-- Samedi : Épaules / Abdos + Full body (pompes pike, élévations latérales, gainage, crunchs, relevés jambes, rotation russe, burpees, pompes explosives)
-- Dimanche : Repos complet
+DONNÉES DISPONIBLES DANS L'APPLICATION :
+- Séances (muscu + vélo avec FC, watts, durée)
+- Sommeil (durée, qualité 1-10, notes)
+- Nutrition (kcal, protéines, glucides, lipides par repas — petit-déjeuner, collations, déjeuner, dîner)
+- Hydratation (eau pure + autres boissons en ml, objectif journalier configurable)
+- Pesée quotidienne (poids en kg, masse grasse % via Fitbit Aria, heure de pesée)
+- Prises (compléments alimentaires, médicaments horodatés)
+- Documents de santé (bilans sanguins, bilans médicaux, imagerie)
+- Notes personnelles au coach (blessures, objectifs, contraintes)
 
-PHASES DU PROGRAMME :
-- Fondations (S1-4) : Maîtriser les mouvements, activer les muscles. Repos 90s.
-- Hypertrophie (S5-10) : Volume + intensité, +1 série/exercice, repos réduit à 60s.
-- Surcompensation (S11-13) : Pousser les limites, tempo lent, supersets, +1 série.
-- Décharge (S14) : Récupération active, volume ÷ 2.
+BIBLIOTHÈQUE DE SÉANCES :
+Tu reçois la liste complète des séances disponibles dans l'application (section "BIBLIOTHÈQUE DE SÉANCES").
+Quand tu suggères une séance, utilise toujours son nom exact tel qu'il apparaît dans la bibliothèque.
+Pour choisir quelle séance recommander, raisonne à partir de l'historique récent : groupes musculaires travaillés, récupération, fréquence.
 
 CONSEIL SUR LA PROCHAINE SÉANCE :
-Termine TOUJOURS ton conseil par un avis sur la prochaine séance à venir (indiquée dans "PROCHAINE SÉANCE").
-- Si la séance du jour n'a pas encore eu lieu : conseille sur cette séance.
-- Si la séance du jour est déjà faite : conseille sur celle du lendemain.
-- Indique si elle peut se faire normalement, ou s'il faut adapter/alléger certains exercices.
-- Prends en compte : douleurs/blessures signalées, qualité du sommeil récent, charge d'entraînement récente, phase du programme.
-- Pour un jour de repos : confirme le repos ou suggère de la mobilité/étirements si pertinent.`;
+Conclus toujours ton conseil par un avis sur la prochaine séance (section "SÉANCE DE DEMAIN") :
+- Si une séance est enregistrée pour demain → conseille sur ses exercices spécifiques (adapter, alléger ou y aller à fond selon la récupération).
+- Si rien n'est enregistré pour demain → ne devine pas et n'invente pas de séance. Conseille sur la récupération ou suggère quel type de séance serait pertinent selon l'historique récent.
+Prends en compte : douleurs/blessures signalées dans les notes, qualité du sommeil récent, charge des derniers jours, nutrition du jour.`;
 
 function buildUserMessage(trigger, date, data, coachWindowDays, userMessage) {
   const parts = [];
@@ -85,11 +96,27 @@ function buildUserMessage(trigger, date, data, coachWindowDays, userMessage) {
     }
   }
 
-  // Health documents
+  // Health documents — recent ones in full, old ones summarised briefly
   if (data.healthDocs && data.healthDocs.length > 0) {
-    parts.push(`\n=== DOCUMENTS DE SANTÉ ===`);
-    for (const d of data.healthDocs) {
-      parts.push(`[${d.date}] (${d.type}) ${d.summary || d.content}`);
+    const cutoff = new Date(date + "T00:00:00");
+    cutoff.setDate(cutoff.getDate() - 90); // 90 days = ~3 months
+    const cutoffStr = cutoff.toISOString().split("T")[0];
+
+    const recentDocs = data.healthDocs.filter(d => d.date >= cutoffStr);
+    const oldDocs    = data.healthDocs.filter(d => d.date <  cutoffStr);
+
+    if (recentDocs.length > 0) {
+      parts.push(`\n=== DOCUMENTS DE SANTÉ RÉCENTS (< 3 mois) ===`);
+      for (const d of recentDocs) {
+        parts.push(`[${d.date}] (${d.type}) ${d.summary || d.content}`);
+      }
+    }
+
+    if (oldDocs.length > 0) {
+      parts.push(`\n=== DOCUMENTS DE SANTÉ ANCIENS (> 3 mois — ne pas répéter systématiquement) ===`);
+      for (const d of oldDocs) {
+        parts.push(`[${d.date}] (${d.type}) — disponible mais ancien, n'évoquer que si explicitement pertinent.`);
+      }
     }
   }
 
@@ -98,6 +125,70 @@ function buildUserMessage(trigger, date, data, coachWindowDays, userMessage) {
   if (data.profile) {
     parts.push(`Poids actuel : ${data.profile.currentWeight || "non renseigné"} kg`);
     parts.push(`Date début programme : ${data.profile.startDate || "non définie"}`);
+  }
+
+  // Today's nutrition
+  if (data.todayNutrition) {
+    const n = data.todayNutrition;
+    const allItems = Object.values(n.sections || {}).flat();
+    const kcal  = Math.round(allItems.reduce((s, i) => s + (i.kcal  || 0), 0));
+    const prot  = Math.round(allItems.reduce((s, i) => s + (i.prot  || 0), 0) * 10) / 10;
+    const carbs = Math.round(allItems.reduce((s, i) => s + (i.carbs || 0), 0) * 10) / 10;
+    const fats  = Math.round(allItems.reduce((s, i) => s + (i.fats  || 0), 0) * 10) / 10;
+    if (kcal > 0) {
+      parts.push(`\n=== NUTRITION DU JOUR ===`);
+      const g = data.nutritionGoals;
+      const goalLine = g ? ` (obj: ${g.kcal} kcal, ${g.prot}g prot)` : "";
+      parts.push(`Total : ${kcal} kcal · P: ${prot}g · G: ${carbs}g · L: ${fats}g${goalLine}`);
+      // Per-meal breakdown
+      const SECTION_LABELS = {
+        breakfast: "Petit-déj", morningSnack: "Collation matin", lunch: "Déjeuner",
+        afternoonSnack: "Collation aprèm", dinner: "Dîner", eveningSnack: "Collation soir",
+      };
+      for (const [key, items] of Object.entries(n.sections || {})) {
+        if (!items || items.length === 0) continue;
+        const mKcal = Math.round(items.reduce((s, i) => s + (i.kcal || 0), 0));
+        const mProt = Math.round(items.reduce((s, i) => s + (i.prot || 0), 0) * 10) / 10;
+        const names = items.map(i => i.name).join(", ");
+        parts.push(`  ${SECTION_LABELS[key] || key} : ${mKcal} kcal, P:${mProt}g — ${names}`);
+      }
+    }
+  }
+
+  // Today's hydration
+  if (data.todayHydration) {
+    const h = data.todayHydration;
+    const water = (h.entries || []).reduce((s, e) => s + (e.ml || 0), 0);
+    const nutLiquids = data.todayNutrition
+      ? Object.values(data.todayNutrition.sections || {}).flat()
+          .filter(i => i.unit === "ml" && i.qty > 0)
+          .reduce((s, i) => s + (i.qty || 0), 0)
+      : 0;
+    const total = water + nutLiquids;
+    if (total > 0 || data.hydrationGoal) {
+      parts.push(`\n=== HYDRATATION DU JOUR ===`);
+      const goal = data.hydrationGoal || 2000;
+      const pct = Math.round((total / goal) * 100);
+      parts.push(`Eau : ${water} ml · Autres boissons : ${nutLiquids} ml · Total : ${total} ml / ${goal} ml (${pct}%)`);
+    }
+  }
+
+  // Today's intakes (supplements/medications)
+  if (data.todayIntakes && data.todayIntakes.entries && data.todayIntakes.entries.length > 0) {
+    parts.push(`\n=== PRISES DU JOUR (compléments / médicaments) ===`);
+    data.todayIntakes.entries.forEach(e => {
+      parts.push(`  ${e.time || ""} ${e.name}${e.dose ? " — " + e.dose : ""}${e.note ? " (" + e.note + ")" : ""}`);
+    });
+  }
+
+  // Today's weighing (body fat if available)
+  if (data.todayWeight) {
+    const w = data.todayWeight;
+    if (w.weight || w.bodyFat) {
+      parts.push(`\n=== PESÉE DU JOUR ===`);
+      if (w.weight) parts.push(`Poids : ${w.weight} kg${w.weightTime ? " à " + w.weightTime : ""}`);
+      if (w.bodyFat) parts.push(`Masse grasse : ${w.bodyFat}%`);
+    }
   }
 
   // Today's data based on trigger
@@ -163,41 +254,58 @@ function buildUserMessage(trigger, date, data, coachWindowDays, userMessage) {
   if (data.recentWeeklies && data.recentWeeklies.length > 0) {
     parts.push(`\n=== TENDANCE POIDS ===`);
     data.recentWeeklies.forEach((w) => {
-      parts.push(`S${w.week} (${w.phase}) : ${w.weight}kg (${w.deltaWeight >= 0 ? "+" : ""}${w.deltaWeight}kg) | Muscu: ${w.musculationDone}/${w.musculationTotal} | Vélo: ${w.bikeDone}/${w.bikeTotal}`);
+      let line = `S${w.week} (${w.phase}) : ${w.weight || "?"}kg`;
+      if (w.deltaWeight != null) line += ` (${w.deltaWeight >= 0 ? "+" : ""}${w.deltaWeight}kg)`;
+      if (w.bodyFat != null) line += ` · MG: ${w.bodyFat}%`;
+      if (w.musculationDone != null) line += ` | Muscu: ${w.musculationDone}/${w.musculationTotal}`;
+      if (w.bikeDone != null) line += ` | Vélo: ${w.bikeDone}/${w.bikeTotal}`;
+      parts.push(line);
     });
   }
 
-  // Next session info
-  const WEEKLY_SCHEDULE = [
-    { day: 1, label: "Lundi", type: "muscu", group: "Poitrine / Triceps", exercises: "pompes classiques, inclinées, dips, pompes serrées, diamant" },
-    { day: 2, label: "Mardi", type: "velo", group: "Vélo", exercises: "cardio endurance 45-60 min, FC 110-128 bpm" },
-    { day: 3, label: "Mercredi", type: "muscu", group: "Dos / Biceps", exercises: "rowing un bras, rowing penché, curl biceps, curl marteau, superman" },
-    { day: 4, label: "Jeudi", type: "muscu", group: "Jambes / Fessiers", exercises: "squats, fentes avant, pont fessier, squat sauté, mollets debout" },
-    { day: 5, label: "Vendredi", type: "velo", group: "Vélo", exercises: "cardio endurance 45-60 min" },
-    { day: 6, label: "Samedi", type: "muscu", group: "Épaules / Abdos + Full body", exercises: "pompes pike, élévations latérales, gainage, crunchs, relevés jambes, rotation russe, burpees, pompes explosives" },
-    { day: 0, label: "Dimanche", type: "repos", group: "Repos", exercises: "repos complet" },
-  ];
-
-  const todayDate = new Date(date + "T12:00:00");
-  const todayDow = todayDate.getDay(); // 0=dim, 1=lun...
-  const todaySchedule = WEEKLY_SCHEDULE.find(s => s.day === todayDow);
-  const todayDone = trigger === "workout" && data.todayWorkout;
-
-  let nextSchedule, nextLabel;
-  if (todayDone || todaySchedule.type === "repos") {
-    // Today done or rest → show tomorrow
-    const tomorrowDow = (todayDow + 1) % 7;
-    nextSchedule = WEEKLY_SCHEDULE.find(s => s.day === tomorrowDow);
-    nextLabel = `demain (${nextSchedule.label})`;
-  } else {
-    nextSchedule = todaySchedule;
-    nextLabel = `aujourd'hui (${nextSchedule.label})`;
+  if (data.recentNutrition && data.recentNutrition.length > 0) {
+    parts.push(`\n=== NUTRITION RÉCENTE (${coachWindowDays} derniers jours) ===`);
+    data.recentNutrition.forEach((n) => {
+      const allItems = Object.values(n.sections || {}).flat();
+      const kcal = Math.round(allItems.reduce((s, i) => s + (i.kcal || 0), 0));
+      const prot = Math.round(allItems.reduce((s, i) => s + (i.prot || 0), 0) * 10) / 10;
+      if (kcal > 0) parts.push(`${n.date} : ${kcal} kcal · P: ${prot}g`);
+    });
   }
 
-  parts.push(`\n=== PROCHAINE SÉANCE : ${nextLabel} ===`);
-  parts.push(`Type : ${nextSchedule.type} | Groupe : ${nextSchedule.group}`);
-  if (nextSchedule.type !== "repos") {
-    parts.push(`Exercices prévus : ${nextSchedule.exercises}`);
+  // Workout library
+  if (data.workoutLibrary && data.workoutLibrary.length > 0) {
+    parts.push(`\n=== BIBLIOTHÈQUE DE SÉANCES ===`);
+    for (const tpl of data.workoutLibrary) {
+      const exList = tpl.exercises.map(e => `${e.name} (${e.sets}×${e.reps})`).join(", ");
+      parts.push(`${tpl.icon || "💪"} ${tpl.name} — ${exList}`);
+    }
+    parts.push(`Utilise ces séances par leur nom exact quand tu suggères une activité.`);
+  }
+
+  // Next session — based solely on what's actually saved in the app
+  parts.push(`\n=== SÉANCE DE DEMAIN ===`);
+  if (data.tomorrowWorkout) {
+    const tw = data.tomorrowWorkout;
+    if (tw.dayType === "rest") {
+      parts.push(`Repos enregistré.`);
+    } else if (tw.dayType === "velo") {
+      const b = tw.bikeData;
+      parts.push(`Vélo${b && b.durationMinutes ? ` : déjà effectué (${b.durationMinutes}min, FC ${b.fcAvg}bpm)` : " (prévu, pas encore effectué)"}`);
+    } else {
+      parts.push(`Type : ${tw.dayType} | Groupe : ${tw.muscleGroup || tw.templateId || "—"}`);
+      if (tw.exercises?.length > 0) {
+        const done = tw.exercises.filter(e => e.done).length;
+        const total = tw.exercises.length;
+        if (done > 0) {
+          parts.push(`Déjà effectuée : ${done}/${total} exercices faits`);
+        } else {
+          parts.push(`Exercices prévus : ${tw.exercises.map(e => e.name).join(", ")}`);
+        }
+      }
+    }
+  } else {
+    parts.push(`Aucune séance enregistrée pour demain dans l'application.`);
   }
 
   // Previous coach advice (for continuity)
@@ -212,9 +320,9 @@ function buildUserMessage(trigger, date, data, coachWindowDays, userMessage) {
   if (userMessage) {
     parts.push(`\n=== MESSAGE DE L'UTILISATEUR ===`);
     parts.push(userMessage.slice(0, 300));
-    parts.push(`\nRéponds à sa question/demande en priorité, tout en t'appuyant sur ses données. Sois concis (2-4 phrases).`);
+    parts.push(`\nRéponds à sa question en priorité, en t'appuyant sur ses données. Développe autant que nécessaire (jusqu'à 8-10 phrases ou une liste si pertinent), mais sans remplissage.`);
   } else {
-    parts.push(`\nDonne un conseil personnalisé basé sur ces données. Sois concis (2-4 phrases).`);
+    parts.push(`\nDonne un conseil ciblé basé sur ces données. Reste court : 2-4 phrases suffisent.`);
   }
 
   return parts.join("\n");
@@ -285,6 +393,13 @@ exports.getCoachAdvice = onCall(
       data.todayWorkout = wDoc.exists ? wDoc.data() : null;
     }
 
+    // Tomorrow's workout (to give accurate "next session" advice)
+    const tomorrowDate = new Date(date + "T12:00:00");
+    tomorrowDate.setDate(tomorrowDate.getDate() + 1);
+    const tomorrowStr = tomorrowDate.toISOString().split("T")[0];
+    const tomorrowDoc = await db.doc(`users/${uid}/workouts/${tomorrowStr}`).get();
+    data.tomorrowWorkout = tomorrowDoc.exists ? tomorrowDoc.data() : null;
+
     // Today's sleep (for sleep trigger)
     if (trigger === "sleep") {
       const sDoc = await db.doc(`users/${uid}/sleep/${date}`).get();
@@ -314,6 +429,58 @@ exports.getCoachAdvice = onCall(
       .limit(3)
       .get();
     data.recentWeeklies = weekliesSnap.docs.map((d) => d.data());
+
+    // Today's nutrition
+    const nutDoc = await db.doc(`users/${uid}/nutrition/${date}`).get();
+    data.todayNutrition = nutDoc.exists ? nutDoc.data() : null;
+
+    // Nutrition goals
+    const nutGoalsDoc = await db.doc(`users/${uid}/settings/nutritionGoals`).get();
+    data.nutritionGoals = nutGoalsDoc.exists ? nutGoalsDoc.data() : null;
+
+    // Recent nutrition (last coachWindowDays days — just summaries computed in buildUserMessage)
+    const nutSnap = await db
+      .collection(`users/${uid}/nutrition`)
+      .orderBy("date", "desc")
+      .limit(coachWindowDays)
+      .get();
+    data.recentNutrition = nutSnap.docs.map((d) => d.data()).filter((n) => n.date !== date);
+
+    // Today's hydration
+    const hydDoc = await db.doc(`users/${uid}/hydration/${date}`).get();
+    data.todayHydration = hydDoc.exists ? hydDoc.data() : null;
+
+    // Hydration goal
+    const hydGoalDoc = await db.doc(`users/${uid}/settings/hydrationGoal`).get();
+    data.hydrationGoal = hydGoalDoc.exists ? hydGoalDoc.data().ml : 2000;
+
+    // Today's intakes (supplements / medications)
+    const intakesDoc = await db.doc(`users/${uid}/intakes/${date}`).get();
+    data.todayIntakes = intakesDoc.exists ? intakesDoc.data() : null;
+
+    // Today's weight entry (for body fat % — stored in workouts doc)
+    if (trigger !== "workout") {
+      const weightDoc = await db.doc(`users/${uid}/workouts/${date}`).get();
+      data.todayWeight = weightDoc.exists ? { weight: weightDoc.data().weight, bodyFat: weightDoc.data().bodyFat, weightTime: weightDoc.data().weightTime } : null;
+    } else {
+      data.todayWeight = data.todayWorkout ? { weight: data.todayWorkout.weight, bodyFat: data.todayWorkout.bodyFat, weightTime: data.todayWorkout.weightTime } : null;
+    }
+
+    // Workout library — templates + exercises (for "what should I do?" advice)
+    const [templatesSnap, exercisesSnap] = await Promise.all([
+      db.collection(`users/${uid}/workoutTemplates`).get(),
+      db.collection(`users/${uid}/exercises`).get(),
+    ]);
+    const exercisesById = {};
+    exercisesSnap.docs.forEach(d => { exercisesById[d.id] = d.data(); });
+    data.workoutLibrary = templatesSnap.docs.map(d => {
+      const tpl = { id: d.id, ...d.data() };
+      tpl.exercises = (tpl.exerciseIds || [])
+        .map(id => exercisesById[id])
+        .filter(Boolean)
+        .map(ex => ({ name: ex.name, sets: ex.defaultSets, reps: ex.defaultReps, muscleGroup: ex.muscleGroup }));
+      return tpl;
+    });
 
     // Health documents (all — they're already summarized)
     const healthSnap = await db.collection(`users/${uid}/healthDocs`)
