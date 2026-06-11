@@ -1186,29 +1186,47 @@ Maximum 8 aliments. Valeurs réalistes.`,
 
       const dayData = await getNutrition(copyDate).catch(() => null);
       const content = el.querySelector('#copy-day-content');
-      const items = dayData?.sections?.[sectionKey] || [];
 
-      if (!items.length) {
-        content.innerHTML = `<p style="font-size:13px;color:var(--text-secondary);text-align:center;padding:16px 0">Aucun aliment dans cette section ce jour-là.</p>`;
+      // Collect all items across all sections
+      const allItems = [];
+      for (const sec of SECTIONS) {
+        const secItems = dayData?.sections?.[sec.key] || [];
+        if (secItems.length) {
+          allItems.push({ sec, items: secItems });
+        }
+      }
+
+      if (!allItems.length) {
+        content.innerHTML = `<p style="font-size:13px;color:var(--text-secondary);text-align:center;padding:16px 0">Aucun aliment enregistré ce jour-là.</p>`;
         return;
       }
 
-      content.innerHTML = items.map((item, i) => `
-        <div class="nut-result-item" style="display:flex;align-items:center;gap:8px" data-idx="${i}">
-          <div style="min-width:0;flex:1">
-            <div class="nut-result-name">${item.name}${item.brand ? `<span class="nut-food-brand"> · ${item.brand}</span>` : ''}</div>
-            <div class="nut-result-meta">${item.qty}${item.unit} · ${Math.round(item.kcal)} kcal · P:${item.prot}g · G:${item.carbs}g · L:${item.fats}g</div>
-          </div>
-          <button class="btn-icon copy-add-btn" data-idx="${i}" title="Ajouter" style="width:28px;height:28px;flex-shrink:0;border:1px solid var(--accent);border-radius:6px;color:var(--accent)">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-              <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
-            </svg>
-          </button>
-        </div>`).join('');
+      // Build a flat indexed list for event binding
+      const flat = [];
+      content.innerHTML = allItems.map(({ sec, items }) => {
+        const start = flat.length;
+        items.forEach(item => flat.push(item));
+        return `
+          <div style="font-size:11px;text-transform:uppercase;color:var(--text-secondary);letter-spacing:.04em;margin:10px 0 4px">${sec.icon} ${sec.label}</div>
+          ${items.map((item, localIdx) => {
+            const idx = start + localIdx;
+            return `<div class="nut-result-item" style="display:flex;align-items:center;gap:8px">
+              <div style="min-width:0;flex:1">
+                <div class="nut-result-name">${item.name}${item.brand ? `<span class="nut-food-brand"> · ${item.brand}</span>` : ''}</div>
+                <div class="nut-result-meta">${item.qty}${item.unit} · ${Math.round(item.kcal)} kcal · P:${item.prot}g · G:${item.carbs}g · L:${item.fats}g</div>
+              </div>
+              <button class="btn-icon copy-add-btn" data-idx="${idx}" title="Ajouter" style="width:28px;height:28px;flex-shrink:0;border:1px solid var(--accent);border-radius:6px;color:var(--accent)">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                  <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+                </svg>
+              </button>
+            </div>`;
+          }).join('')}`;
+      }).join('');
 
       content.querySelectorAll('.copy-add-btn').forEach(btn => {
         btn.addEventListener('click', async () => {
-          const { id: _id, ...item } = items[parseInt(btn.dataset.idx)];
+          const { id: _id, ...item } = flat[parseInt(btn.dataset.idx)];
           btn.disabled = true;
           btn.innerHTML = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--success)" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>`;
           await addEntry(item);
