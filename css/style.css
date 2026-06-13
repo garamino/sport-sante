@@ -2335,6 +2335,39 @@ textarea {
   border-color: var(--accent);
 }
 
+/* ── Nutrition — bouton ajustement du jour ──────────────────────────────── */
+.nut-day-adjust-btn {
+  font-size: 11px;
+  padding: 5px 10px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 167, 38, 0.4);
+  background: rgba(255, 167, 38, 0.07);
+  color: #ffa726;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s, border-color 0.15s;
+}
+.nut-day-adjust-btn:hover {
+  background: rgba(255, 167, 38, 0.16);
+  border-color: #ffa726;
+}
+
+/* ── Nutrition — badge ajustement actif ─────────────────────────────────── */
+.nut-day-adjust-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  color: #ffa726;
+  background: rgba(255, 167, 38, 0.1);
+  border: 1px solid rgba(255, 167, 38, 0.35);
+  border-radius: 12px;
+  padding: 4px 6px 4px 10px;
+}
+.nut-day-adjust-delta {
+  font-weight: 600;
+}
+
 /* ── Nutrition — questionnaire goals ────────────────────────────────────── */
 .ng-q-block {
   margin-bottom: 14px;

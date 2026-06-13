@@ -4,7 +4,8 @@ import {
   getNutritionGoals, saveNutritionGoals,
   getRecentNutritionFoods, saveNutritionFood,
   getApiKey,
-  getUserProfile, getLastWeeklies, getRecentSleep,
+  getUserProfile, saveUserProfile, getLastWeeklies, getRecentSleep,
+  getWorkout,
 } from '../db.js';
 
 const SECTIONS = [
@@ -18,11 +19,12 @@ const SECTIONS = [
 
 const DEFAULT_GOALS = { kcal: 2500, prot: 160, carbs: 300, fats: 80 };
 
-let currentDate = null;
-let _container  = null;
-let _data       = null;
-let _goals      = DEFAULT_GOALS;
-let _recents    = [];
+let currentDate  = null;
+let _container   = null;
+let _data        = null;
+let _goals       = DEFAULT_GOALS;
+let _dayAdjust   = null;
+let _recents     = [];
 
 // ─── Entry point ─────────────────────────────────────────────────────────────
 
@@ -42,7 +44,8 @@ export async function render(container, resetDate = true) {
     for (const s of SECTIONS) {
       if (!_data.sections[s.key]) _data.sections[s.key] = [];
     }
-    _goals = _goals || DEFAULT_GOALS;
+    _goals     = _goals || DEFAULT_GOALS;
+    _dayAdjust = _data.dayAdjust || null;
 
     renderView();
   } catch (err) {
@@ -65,12 +68,46 @@ function sum(items) {
 function allItems() { return Object.values(_data.sections).flat(); }
 function round1(n)  { return Math.round(n * 10) / 10; }
 
+function effectiveGoals() {
+  if (!_dayAdjust) return _goals;
+  return {
+    kcal:  _goals.kcal  + (_dayAdjust.kcalDelta  || 0),
+    prot:  _goals.prot  + (_dayAdjust.protDelta   || 0),
+    carbs: _goals.carbs + (_dayAdjust.carbsDelta  || 0),
+    fats:  _goals.fats  + (_dayAdjust.fatsDelta   || 0),
+  };
+}
+
+function computeBaseFromProfile(weight, height, age, sex) {
+  const bmr  = sex === 'F'
+    ? 10 * weight + 6.25 * height - 5 * age - 161
+    : 10 * weight + 6.25 * height - 5 * age + 5;
+  const kcal  = Math.round(bmr * 1.4);
+  const prot  = Math.round(weight * 1.6);
+  const fats  = Math.round((kcal * 0.28) / 9);
+  const carbs = Math.max(0, Math.round((kcal - prot * 4 - fats * 9) / 4));
+  return { kcal, prot, carbs, fats };
+}
+
 // ─── Rendu principal ─────────────────────────────────────────────────────────
 
 function renderView() {
   const t = sum(allItems());
   const tKcal = Math.round(t.kcal), tProt = round1(t.prot);
   const tCarbs = round1(t.carbs), tFats = round1(t.fats);
+  const eff = effectiveGoals();
+
+  const dayAdjustRow = _dayAdjust
+    ? `<div class="nut-day-adjust-badge">
+        <span>⚡ ${_dayAdjust.label}</span>
+        <span class="nut-day-adjust-delta">${_dayAdjust.kcalDelta > 0 ? '+' : ''}${_dayAdjust.kcalDelta} kcal</span>
+        <button id="nut-reset-adjust" class="btn-icon" style="width:20px;height:20px;margin-left:2px" title="Retirer l'ajustement">
+          <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+            <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+          </svg>
+        </button>
+       </div>`
+    : `<button id="nut-day-adjust-btn" class="nut-day-adjust-btn">⚡ Adapter au jour</button>`;
 
   _container.innerHTML = `
     <div class="date-nav-row">
@@ -85,19 +122,22 @@ function renderView() {
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
         <div class="card-title" style="margin:0">Bilan du jour</div>
         <div style="display:flex;gap:6px;align-items:center">
-          <button id="nut-edit-goals-btn" class="btn-icon" title="Modifier les objectifs" style="width:28px;height:28px;border:1px solid var(--border);border-radius:6px">
+          <button id="nut-edit-goals-btn" class="btn-icon" title="Modifier les objectifs manuellement" style="width:28px;height:28px;border:1px solid var(--border);border-radius:6px">
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
               <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
               <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
             </svg>
           </button>
-          <button id="nut-estimate-btn" class="nut-estimate-btn">✨ Estimer mes besoins</button>
+          <button id="nut-estimate-btn" class="nut-estimate-btn">✨ Ma base</button>
         </div>
       </div>
-      ${macroBar('Calories',  tKcal,  _goals.kcal,  'var(--accent)',   ' kcal')}
-      ${macroBar('Protéines', tProt,  _goals.prot,  '#ab47bc')}
-      ${macroBar('Glucides',  tCarbs, _goals.carbs, '#ffa726')}
-      ${macroBar('Lipides',   tFats,  _goals.fats,  'var(--success)')}
+      ${macroBar('Calories',  tKcal,  eff.kcal,  'var(--accent)',   ' kcal')}
+      ${macroBar('Protéines', tProt,  eff.prot,  '#ab47bc')}
+      ${macroBar('Glucides',  tCarbs, eff.carbs, '#ffa726')}
+      ${macroBar('Lipides',   tFats,  eff.fats,  'var(--success)')}
+      <div style="display:flex;justify-content:flex-end;margin-top:10px">
+        ${dayAdjustRow}
+      </div>
     </div>
 
     <div id="nut-sections">
@@ -219,6 +259,14 @@ function bindEvents() {
 
   document.getElementById('nut-estimate-btn')?.addEventListener('click', openGoalsModal);
   document.getElementById('nut-edit-goals-btn')?.addEventListener('click', openEditGoalsModal);
+  document.getElementById('nut-day-adjust-btn')?.addEventListener('click', openDayAdjustModal);
+  document.getElementById('nut-reset-adjust')?.addEventListener('click', async () => {
+    _dayAdjust = null;
+    delete _data.dayAdjust;
+    await saveNutrition(currentDate, _data);
+    renderView();
+    showToast('Ajustement retiré');
+  });
 }
 
 // ─── Modale : édition d'un aliment ──────────────────────────────────────────
@@ -386,7 +434,7 @@ function openEditGoalsModal() {
   });
 }
 
-// ─── Modale : estimation des besoins journaliers ────────────────────────────
+// ─── Modale : base nutritionnelle (Mifflin-St Jeor) ────────────────────────
 
 async function openGoalsModal() {
   document.getElementById('nut-goals-modal')?.remove();
@@ -394,60 +442,26 @@ async function openGoalsModal() {
   const modal = document.createElement('div');
   modal.id = 'nut-goals-modal';
   modal.className = 'settings-modal-overlay';
-  modal.innerHTML = '<div class="settings-modal" style="max-width:480px"></div>';
+  modal.innerHTML = '<div class="settings-modal" style="max-width:440px"></div>';
   document.body.appendChild(modal);
 
   const inner = modal.querySelector('.settings-modal');
   const close = () => modal.remove();
   modal.addEventListener('click', e => { if (e.target === modal) close(); });
 
-  // ── Step 1 : chargement des données ────────────────────────────────────
   inner.innerHTML = `
     <div style="text-align:center;padding:32px 16px">
       <div class="spinner" style="width:32px;height:32px;margin:0 auto 16px"></div>
-      <p style="font-size:14px;font-weight:500">Analyse de ton profil…</p>
-      <p style="font-size:12px;color:var(--text-secondary);margin-top:4px">Poids · sommeil · programme sportif</p>
+      <p style="font-size:14px;font-weight:500">Chargement du profil…</p>
     </div>`;
 
   try {
-    const apiKey = await getApiKey();
-    if (!apiKey) {
-      inner.innerHTML = `
-        <div style="text-align:center;padding:32px 16px">
-          <p style="font-size:32px;margin-bottom:8px">🔑</p>
-          <p style="font-size:14px;font-weight:500">Clé API requise</p>
-          <p style="font-size:13px;color:var(--text-secondary);margin-top:6px">Configure ta clé Gemini dans ⚙️ Paramètres.</p>
-          <button id="ng-close-err" class="btn btn-primary" style="margin-top:16px;width:100%">Fermer</button>
-        </div>`;
-      inner.querySelector('#ng-close-err').addEventListener('click', close);
-      return;
-    }
-
-    // Collecte des données disponibles
-    const [profile, weeklies, sleepEntries] = await Promise.all([
+    const [profile, weeklies] = await Promise.all([
       getUserProfile().catch(() => null),
       getLastWeeklies(4).catch(() => []),
-      getRecentSleep(7).catch(() => []),
     ]);
-
-    const lastWeight  = weeklies.at(-1)?.weight || profile?.weight;
-    const sleepCount  = sleepEntries.length;
-    const avgHours    = sleepCount ? round1(sleepEntries.reduce((s, e) => s + (e.hoursSlept || 0), 0) / sleepCount) : null;
-    const avgQuality  = sleepCount ? round1(sleepEntries.reduce((s, e) => s + (e.quality || 0), 0) / sleepCount) : null;
-
-    const knownData = {
-      ...(lastWeight        && { 'Poids actuel':         `${lastWeight} kg` }),
-      ...(profile?.bodyFat  && { 'Masse graisseuse':     `${profile.bodyFat} %` }),
-      ...(profile?.age      && { 'Âge':                  `${profile.age} ans` }),
-      ...(profile?.height   && { 'Taille':               `${profile.height} cm` }),
-      ...(avgHours          && { 'Sommeil moyen':         `${avgHours}h / nuit (qualité ${avgQuality}/10)` }),
-      'Programme':            'Prise de masse 14 semaines — musculation 4×/semaine + vélo 2×/semaine',
-    };
-
-    // ── Step 2 : Gemini génère les questions ──────────────────────────────
-    const questions = await _geminiAskQuestions(knownData, apiKey);
-    _showQuestionnaire(inner, close, questions, knownData, apiKey);
-
+    const lastWeight = weeklies.at(-1)?.weight || profile?.weight;
+    _showBaseGoalsForm(inner, close, profile, lastWeight);
   } catch (err) {
     inner.innerHTML = `
       <div style="text-align:center;padding:32px 16px">
@@ -457,6 +471,123 @@ async function openGoalsModal() {
       </div>`;
     inner.querySelector('#ng-close-err').addEventListener('click', close);
   }
+}
+
+function _showBaseGoalsForm(inner, close, profile, lastWeight) {
+  const needWeight = !lastWeight;
+  const needHeight = !profile?.height;
+  const needAge    = !profile?.age;
+  const needSex    = !profile?.sex;
+
+  const knownLine = [
+    lastWeight      && `Poids : <b>${lastWeight} kg</b>`,
+    profile?.height && `Taille : <b>${profile.height} cm</b>`,
+    profile?.age    && `Âge : <b>${profile.age} ans</b>`,
+  ].filter(Boolean).join(' · ');
+
+  inner.innerHTML = `
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+      <div>
+        <h3 style="font-size:15px;font-weight:600;margin:0">✨ Ma base nutritionnelle</h3>
+        <p style="font-size:12px;color:var(--text-secondary);margin:3px 0 0">Calories de maintien — sans surplus ni objectif sportif</p>
+      </div>
+      <button id="ng-close" class="btn-icon" style="width:30px;height:30px">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+          <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+        </svg>
+      </button>
+    </div>
+    ${knownLine ? `<p style="font-size:12px;color:var(--text-secondary);margin:0 0 12px">${knownLine}</p>` : ''}
+    <div style="display:flex;flex-direction:column;gap:10px">
+      ${needSex ? `
+      <div>
+        <div class="ng-q-label">Sexe</div>
+        <div class="ng-q-choices">
+          <label class="ng-q-choice"><input type="radio" name="ng-sex" value="M" checked><span>Homme</span></label>
+          <label class="ng-q-choice"><input type="radio" name="ng-sex" value="F"><span>Femme</span></label>
+        </div>
+      </div>` : ''}
+      ${needWeight ? `<div>
+        <label class="ng-q-label">Poids actuel (kg)</label>
+        <input type="number" id="ng-weight" min="30" max="200" step="0.5" placeholder="ex : 75">
+      </div>` : ''}
+      ${needHeight ? `<div>
+        <label class="ng-q-label">Taille (cm)</label>
+        <input type="number" id="ng-height" min="140" max="220" placeholder="ex : 178">
+      </div>` : ''}
+      ${needAge ? `<div>
+        <label class="ng-q-label">Âge (ans)</label>
+        <input type="number" id="ng-age" min="15" max="80" placeholder="ex : 25">
+      </div>` : ''}
+    </div>
+    <button id="ng-compute" class="btn btn-primary" style="width:100%;margin-top:16px">Calculer ma base →</button>`;
+
+  inner.querySelector('#ng-close').addEventListener('click', close);
+  inner.querySelector('#ng-compute').addEventListener('click', async () => {
+    const sex    = profile?.sex || inner.querySelector('input[name="ng-sex"]:checked')?.value || 'M';
+    const weight = lastWeight     || parseFloat(inner.querySelector('#ng-weight')?.value);
+    const height = profile?.height || parseFloat(inner.querySelector('#ng-height')?.value);
+    const age    = profile?.age    || parseFloat(inner.querySelector('#ng-age')?.value);
+    if (!weight || !height || !age) { showToast('Remplis toutes les données'); return; }
+    if (needSex) await saveUserProfile({ sex }).catch(() => {});
+    const result = computeBaseFromProfile(weight, height, age, sex);
+    _showBaseGoalsResult(inner, close, result);
+  });
+}
+
+function _showBaseGoalsResult(inner, close, result) {
+  inner.innerHTML = `
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+      <h3 style="font-size:15px;font-weight:600;margin:0">✨ Ta base nutritionnelle</h3>
+      <button id="ng-close" class="btn-icon" style="width:30px;height:30px">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+          <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+        </svg>
+      </button>
+    </div>
+
+    <div class="ng-result-grid">
+      <div class="ng-result-tile" style="border-color:var(--accent)">
+        <span class="ng-result-val">${result.kcal}</span>
+        <span class="ng-result-unit">kcal</span>
+      </div>
+      <div class="ng-result-tile" style="border-color:#ab47bc">
+        <span class="ng-result-val">${result.prot}</span>
+        <span class="ng-result-unit">g protéines</span>
+      </div>
+      <div class="ng-result-tile" style="border-color:#ffa726">
+        <span class="ng-result-val">${result.carbs}</span>
+        <span class="ng-result-unit">g glucides</span>
+      </div>
+      <div class="ng-result-tile" style="border-color:var(--success)">
+        <span class="ng-result-val">${result.fats}</span>
+        <span class="ng-result-unit">g lipides</span>
+      </div>
+    </div>
+
+    <div style="margin:14px 0;padding:10px 12px;background:var(--bg-secondary);border-radius:var(--radius-sm);border-left:3px solid var(--accent)">
+      <div style="font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:var(--accent);margin-bottom:4px">Mifflin-St Jeor × 1.4</div>
+      <p style="font-size:12px;color:var(--text-secondary);line-height:1.55;margin:0">
+        Calories de maintien sans activité sportive. Pour les jours d'entraînement, utilise <b>⚡ Adapter au jour</b> pour un ajustement personnalisé.
+      </p>
+    </div>
+
+    <button id="ng-apply" class="btn btn-primary" style="width:100%">Appliquer comme base</button>`;
+
+  inner.querySelector('#ng-close').addEventListener('click', close);
+  inner.querySelector('#ng-apply').addEventListener('click', async () => {
+    const goals = { kcal: result.kcal, prot: result.prot, carbs: result.carbs, fats: result.fats };
+    await saveNutritionGoals(goals);
+    _goals = goals;
+    if (_dayAdjust) {
+      _dayAdjust = null;
+      delete _data.dayAdjust;
+      await saveNutrition(currentDate, _data);
+    }
+    close();
+    renderView();
+    showToast('Base nutritionnelle mise à jour ✓');
+  });
 }
 
 // Parse la réponse Gemini — fonctionne en mode JSON natif (responseMimeType: application/json)
@@ -493,208 +624,209 @@ function _extractGeminiJSON(data, type = 'object') {
   }
 }
 
-async function _geminiAskQuestions(knownData, apiKey) {
-  const ctx = Object.entries(knownData).map(([k, v]) => `- ${k} : ${v}`).join('\n');
-  const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
+// ─── Modale : ajustement du jour ────────────────────────────────────────────
 
-  const res = await fetch(endpoint, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({
-      contents: [{ parts: [{ text:
-        `Tu es un nutritionniste expert. Tu vas estimer les besoins nutritionnels journaliers (kcal, protéines, glucides, lipides) d'un utilisateur.
+async function openDayAdjustModal() {
+  document.getElementById('nut-day-modal')?.remove();
+  const modal = document.createElement('div');
+  modal.id = 'nut-day-modal';
+  modal.className = 'settings-modal-overlay';
+  modal.innerHTML = '<div class="settings-modal" style="max-width:440px"></div>';
+  document.body.appendChild(modal);
+  const inner = modal.querySelector('.settings-modal');
+  const close = () => modal.remove();
+  modal.addEventListener('click', e => { if (e.target === modal) close(); });
 
-Données déjà disponibles :
-${ctx}
-
-Génère UNIQUEMENT les questions indispensables pour les informations manquantes.
-Réponds UNIQUEMENT avec un tableau JSON valide, sans aucun texte autour :
-[{"id":"objectif","question":"Quel est ton objectif principal ?","type":"choice","choices":["Prise de masse","Maintien","Perte de masse graisseuse"]},{"id":"age","question":"Quel est ton âge ?","type":"number","unit":"ans","min":15,"max":80}]
-
-Types : "choice" (boutons), "number" (saisie numérique + unité).
-Maximum 5 questions. Ne demande pas ce que tu as déjà. Questions pertinentes uniquement.` }] }],
-      generationConfig: { temperature: 0.2, maxOutputTokens: 8192, responseMimeType: 'application/json' },
-    }),
-  });
-  if (!res.ok) throw new Error(`Gemini ${res.status}`);
-  return _extractGeminiJSON(await res.json(), 'array');
-}
-
-function _showQuestionnaire(inner, close, questions, knownData, apiKey) {
   inner.innerHTML = `
-    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
-      <div>
-        <h3 style="font-size:15px;font-weight:600;margin:0">✨ Estimer mes besoins</h3>
-        <p style="font-size:12px;color:var(--text-secondary);margin:3px 0 0">${questions.length} question${questions.length > 1 ? 's' : ''} pour affiner</p>
-      </div>
-      <button id="ng-close" class="btn-icon" style="width:30px;height:30px">
-        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-          <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
-        </svg>
-      </button>
-    </div>
-    <div id="ng-questions">
-      ${questions.map(q => _questionHTML(q)).join('')}
-    </div>
-    <button id="ng-submit" class="btn btn-primary" style="width:100%;margin-top:16px">
-      Calculer mes besoins →
-    </button>`;
+    <div style="text-align:center;padding:32px 16px">
+      <div class="spinner" style="width:32px;height:32px;margin:0 auto 16px"></div>
+      <p style="font-size:14px;font-weight:500">Analyse de ta journée…</p>
+      <p style="font-size:12px;color:var(--text-secondary);margin-top:4px">Séance · activité · dépense estimée</p>
+    </div>`;
 
-  inner.querySelector('#ng-close').addEventListener('click', close);
-
-  inner.querySelector('#ng-submit').addEventListener('click', async () => {
-    const answers = {};
-    let valid = true;
-
-    for (const q of questions) {
-      const block = inner.querySelector(`[data-qid="${q.id}"]`);
-      if (q.type === 'choice') {
-        const sel = inner.querySelector(`input[name="q_${q.id}"]:checked`);
-        if (sel) { answers[q.id] = { question: q.question, answer: sel.value }; }
-        else { block?.classList.add('ng-q-error'); valid = false; }
-      } else if (q.type === 'number') {
-        const inp = inner.querySelector(`#q_${q.id}`);
-        const val = parseFloat(inp?.value);
-        if (!isNaN(val) && val > 0) {
-          answers[q.id] = { question: q.question, answer: `${val}${q.unit ? ' ' + q.unit : ''}` };
-        } else { inp?.classList.add('ng-q-error'); valid = false; }
-      }
+  try {
+    const apiKey = await getApiKey();
+    if (!apiKey) {
+      inner.innerHTML = `
+        <div style="text-align:center;padding:32px 16px">
+          <p style="font-size:32px;margin-bottom:8px">🔑</p>
+          <p style="font-size:14px;font-weight:500">Clé API requise</p>
+          <p style="font-size:13px;color:var(--text-secondary);margin-top:6px">Configure ta clé Gemini dans ⚙️ Paramètres.</p>
+          <button id="nd-close-key" class="btn btn-primary" style="margin-top:16px;width:100%">Fermer</button>
+        </div>`;
+      inner.querySelector('#nd-close-key').addEventListener('click', close);
+      return;
     }
 
-    if (!valid) { showToast('Réponds à toutes les questions'); return; }
+    const [workout, profile, weeklies] = await Promise.all([
+      getWorkout(currentDate).catch(() => null),
+      getUserProfile().catch(() => null),
+      getLastWeeklies(4).catch(() => []),
+    ]);
+    const lastWeight   = weeklies.at(-1)?.weight || profile?.weight;
+    const activityDesc = _describeWorkout(workout);
 
     inner.innerHTML = `
       <div style="text-align:center;padding:32px 16px">
         <div class="spinner" style="width:32px;height:32px;margin:0 auto 16px"></div>
-        <p style="font-size:14px;font-weight:500">Calcul en cours…</p>
-        <p style="font-size:12px;color:var(--text-secondary);margin-top:4px">Gemini analyse ton profil complet</p>
+        <p style="font-size:14px;font-weight:500">Calcul de l'ajustement…</p>
+        <p style="font-size:12px;color:var(--text-secondary);margin-top:6px;font-style:italic">${activityDesc}</p>
       </div>`;
 
-    try {
-      const result = await _geminiComputeGoals(knownData, answers, apiKey);
-      _showGoalsResult(inner, close, result);
-    } catch (err) {
-      inner.innerHTML = `
-        <div style="text-align:center;padding:32px 16px">
-          <p style="font-size:14px;font-weight:500;color:var(--danger)">Erreur</p>
-          <p style="font-size:12px;color:var(--text-secondary);margin-top:6px">${err.message}</p>
-          <button id="ng-retry" class="btn btn-primary" style="margin-top:16px;width:100%">Réessayer</button>
-        </div>`;
-      inner.querySelector('#ng-retry').addEventListener('click', () => _showQuestionnaire(inner, close, questions, knownData, apiKey));
-    }
-  });
+    const result = await _geminiDayAdjust(_goals, activityDesc, lastWeight, apiKey);
+    _showDayAdjustResult(inner, close, result, activityDesc);
+
+  } catch (err) {
+    inner.innerHTML = `
+      <div style="text-align:center;padding:32px 16px">
+        <p style="font-size:14px;font-weight:500;color:var(--danger)">Erreur</p>
+        <p style="font-size:12px;color:var(--text-secondary);margin-top:6px">${err.message}</p>
+        <button id="nd-close-err" class="btn btn-primary" style="margin-top:16px;width:100%">Fermer</button>
+      </div>`;
+    inner.querySelector('#nd-close-err').addEventListener('click', close);
+  }
 }
 
-function _questionHTML(q) {
-  if (q.type === 'choice') {
-    return `
-      <div class="ng-q-block" data-qid="${q.id}">
-        <div class="ng-q-label">${q.question}</div>
-        <div class="ng-q-choices">
-          ${q.choices.map((c, i) => `
-            <label class="ng-q-choice">
-              <input type="radio" name="q_${q.id}" value="${c}" ${i === 0 ? 'checked' : ''}>
-              <span>${c}</span>
-            </label>`).join('')}
-        </div>
-      </div>`;
+function _describeWorkout(workout) {
+  if (!workout || workout.skipped) return 'Journée sans activité sportive enregistrée';
+  if (workout.dayType === 'rest') return 'Journée repos (programmé)';
+
+  if (workout.dayType === 'velo' || workout.bikeData) {
+    const b = workout.bikeData || {};
+    const parts = ['Séance vélo'];
+    if (b.durationMinutes) parts.push(`${b.durationMinutes} min`);
+    if (b.distanceKm)      parts.push(`${b.distanceKm} km`);
+    if (b.wattsAvg)        parts.push(`${b.wattsAvg} W moy.`);
+    if (b.fcAvg)           parts.push(`FC ${b.fcAvg} bpm`);
+    if (b.elevationGain)   parts.push(`D+ ${b.elevationGain} m`);
+    return parts.join(' · ');
   }
-  if (q.type === 'number') {
-    return `
-      <div class="ng-q-block" data-qid="${q.id}">
-        <div class="ng-q-label">${q.question}</div>
-        <div style="display:flex;gap:8px;align-items:center">
-          <input type="number" id="q_${q.id}" min="${q.min || 0}" max="${q.max || 9999}" placeholder="0" style="flex:1">
-          ${q.unit ? `<span style="font-size:13px;color:var(--text-secondary);white-space:nowrap">${q.unit}</span>` : ''}
-        </div>
-      </div>`;
+
+  if (workout.dayType === 'course' || workout.dayType === 'marche') {
+    const c = workout.cardioData || {};
+    const name = workout.dayType === 'course' ? 'Course à pied' : 'Marche';
+    const parts = [name];
+    if (c.durationMinutes) parts.push(`${c.durationMinutes} min`);
+    if (c.distanceKm)      parts.push(`${c.distanceKm} km`);
+    if (c.fcAvg)           parts.push(`FC ${c.fcAvg} bpm`);
+    if (c.caloriesBurned)  parts.push(`${c.caloriesBurned} kcal brûlées`);
+    return parts.join(' · ');
   }
-  return '';
+
+  const exercises = workout.exercises || [];
+  const done  = exercises.filter(e => e.done).length;
+  const total = exercises.length;
+  const names = exercises.filter(e => e.done).map(e => e.name).slice(0, 5).join(', ');
+  const mg    = workout.muscleGroup ? ` (${workout.muscleGroup})` : '';
+  return `Séance musculation${mg} — ${done}/${total} exercices${names ? ' : ' + names : ''}`;
 }
 
-async function _geminiComputeGoals(knownData, answers, apiKey) {
-  const ctx = Object.entries(knownData).map(([k, v]) => `- ${k} : ${v}`).join('\n');
-  const ans = Object.values(answers).map(a => `- ${a.question} → ${a.answer}`).join('\n');
+async function _geminiDayAdjust(baseGoals, activityDesc, weight, apiKey) {
   const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
-
   const res = await fetch(endpoint, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({
       contents: [{ parts: [{ text:
-        `Tu es un nutritionniste expert. Calcule les apports nutritionnels journaliers optimaux.
+        `Tu es nutritionniste sportif. Voici les besoins nutritionnels de base (au repos, sans sport) :
+- Calories : ${baseGoals.kcal} kcal
+- Protéines : ${baseGoals.prot} g
+- Glucides : ${baseGoals.carbs} g
+- Lipides : ${baseGoals.fats} g
+${weight ? `- Poids : ${weight} kg` : ''}
 
-Données connues :
-${ctx}
+Activité d'aujourd'hui : ${activityDesc}
 
-Réponses de l'utilisateur :
-${ans}
+Propose l'ajustement nutritionnel pour cette journée.
+Réponds UNIQUEMENT avec ce JSON :
+{"kcalDelta":0,"protDelta":0,"carbsDelta":0,"fatsDelta":0,"label":"Repos","tips":["Conseil 1","Conseil 2"]}
 
-Fournis les recommandations personnalisées.
-Réponds UNIQUEMENT avec un objet JSON valide, sans aucun texte autour :
-{"kcal":2800,"prot":175,"carbs":320,"fats":85,"explanation":"2-3 phrases justifiant les valeurs","tips":["Conseil pratique 1","Conseil pratique 2","Conseil pratique 3"]}
-
-Valeurs entières. Explication en français, concise. 3 tips pratiques et actionnables.` }] }],
-      generationConfig: { temperature: 0.1, maxOutputTokens: 8192, responseMimeType: 'application/json' },
+Si journée repos : kcalDelta = 0. label = 2-3 mots max (ex: "Séance muscu", "Sortie vélo", "Repos actif"). Valeurs entières. 2 tips courts et pratiques.` }] }],
+      generationConfig: { temperature: 0.1, maxOutputTokens: 1024, responseMimeType: 'application/json' },
     }),
   });
   if (!res.ok) throw new Error(`Gemini ${res.status}`);
   return _extractGeminiJSON(await res.json(), 'object');
 }
 
-function _showGoalsResult(inner, close, result) {
+function _showDayAdjustResult(inner, close, result, activityDesc) {
+  const eff = {
+    kcal:  _goals.kcal  + (result.kcalDelta  || 0),
+    prot:  _goals.prot  + (result.protDelta   || 0),
+    carbs: _goals.carbs + (result.carbsDelta  || 0),
+    fats:  _goals.fats  + (result.fatsDelta   || 0),
+  };
+  const hasBoost = (result.kcalDelta || 0) > 0;
+  const deltaColor = hasBoost ? '#ffa726' : 'var(--text-secondary)';
+
   inner.innerHTML = `
-    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
-      <h3 style="font-size:15px;font-weight:600;margin:0">✨ Tes besoins estimés</h3>
-      <button id="ng-close" class="btn-icon" style="width:30px;height:30px">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+      <div>
+        <h3 style="font-size:15px;font-weight:600;margin:0">⚡ ${result.label}</h3>
+        <p style="font-size:12px;color:var(--text-secondary);margin:3px 0 0">${activityDesc}</p>
+      </div>
+      <button id="nd-close" class="btn-icon" style="width:30px;height:30px">
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
           <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
         </svg>
       </button>
     </div>
 
-    <div class="ng-result-grid">
-      <div class="ng-result-tile" style="border-color:var(--accent)">
-        <span class="ng-result-val">${result.kcal}</span>
-        <span class="ng-result-unit">kcal</span>
+    <div style="display:flex;gap:8px;margin-bottom:14px;align-items:center">
+      <div style="flex:1;text-align:center;padding:10px 6px;background:var(--bg-secondary);border-radius:var(--radius-sm)">
+        <div style="font-size:10px;color:var(--text-secondary);margin-bottom:2px">Base</div>
+        <div style="font-size:18px;font-weight:700">${_goals.kcal}</div>
+        <div style="font-size:10px;color:var(--text-secondary)">kcal</div>
       </div>
-      <div class="ng-result-tile" style="border-color:#ab47bc">
-        <span class="ng-result-val">${result.prot}</span>
-        <span class="ng-result-unit">g protéines</span>
+      <div style="font-size:16px;color:var(--text-secondary);flex-shrink:0">+</div>
+      <div style="flex:1;text-align:center;padding:10px 6px;background:var(--bg-secondary);border-radius:var(--radius-sm);border:1px solid ${hasBoost ? 'rgba(255,167,38,.4)' : 'transparent'}">
+        <div style="font-size:10px;color:var(--text-secondary);margin-bottom:2px">Sport</div>
+        <div style="font-size:18px;font-weight:700;color:${deltaColor}">${hasBoost ? '+' : ''}${result.kcalDelta || 0}</div>
+        <div style="font-size:10px;color:var(--text-secondary)">kcal</div>
       </div>
-      <div class="ng-result-tile" style="border-color:#ffa726">
-        <span class="ng-result-val">${result.carbs}</span>
-        <span class="ng-result-unit">g glucides</span>
-      </div>
-      <div class="ng-result-tile" style="border-color:var(--success)">
-        <span class="ng-result-val">${result.fats}</span>
-        <span class="ng-result-unit">g lipides</span>
+      <div style="font-size:16px;color:var(--text-secondary);flex-shrink:0">=</div>
+      <div style="flex:1;text-align:center;padding:10px 6px;background:var(--bg-secondary);border-radius:var(--radius-sm);border:1px solid rgba(79,195,247,.4)">
+        <div style="font-size:10px;color:var(--text-secondary);margin-bottom:2px">Objectif</div>
+        <div style="font-size:18px;font-weight:700;color:var(--accent)">${eff.kcal}</div>
+        <div style="font-size:10px;color:var(--text-secondary)">kcal</div>
       </div>
     </div>
 
-    <p style="font-size:13px;color:var(--text-secondary);line-height:1.55;margin:14px 0 10px">${result.explanation}</p>
+    <div style="display:flex;gap:6px;margin-bottom:14px">
+      <div style="flex:1;text-align:center;padding:8px 4px;background:var(--bg-secondary);border-radius:6px">
+        <div style="font-size:13px;font-weight:600;color:#ab47bc">${eff.prot}g</div>
+        <div style="font-size:10px;color:var(--text-secondary)">protéines</div>
+      </div>
+      <div style="flex:1;text-align:center;padding:8px 4px;background:var(--bg-secondary);border-radius:6px">
+        <div style="font-size:13px;font-weight:600;color:#ffa726">${eff.carbs}g</div>
+        <div style="font-size:10px;color:var(--text-secondary)">glucides</div>
+      </div>
+      <div style="flex:1;text-align:center;padding:8px 4px;background:var(--bg-secondary);border-radius:6px">
+        <div style="font-size:13px;font-weight:600;color:var(--success)">${eff.fats}g</div>
+        <div style="font-size:10px;color:var(--text-secondary)">lipides</div>
+      </div>
+    </div>
 
-    ${result.tips?.length ? `<div style="display:flex;flex-direction:column;gap:6px;margin-bottom:16px">
+    ${result.tips?.length ? `<div style="display:flex;flex-direction:column;gap:6px;margin-bottom:14px">
       ${result.tips.map(t => `<div class="ng-tip">💡 ${t}</div>`).join('')}
     </div>` : ''}
 
-    <button id="ng-apply" class="btn btn-primary" style="width:100%">
-      Appliquer ces objectifs
-    </button>`;
+    <button id="nd-apply" class="btn btn-primary" style="width:100%">Appliquer pour aujourd'hui</button>`;
 
-  inner.querySelector('#ng-close').addEventListener('click', close);
-
-  inner.querySelector('#ng-apply').addEventListener('click', async () => {
-    const goals = {
-      kcal: result.kcal, prot: result.prot, carbs: result.carbs, fats: result.fats,
-      explanation: result.explanation || '',
-      tips: result.tips || [],
+  inner.querySelector('#nd-close').addEventListener('click', close);
+  inner.querySelector('#nd-apply').addEventListener('click', async () => {
+    _dayAdjust = {
+      kcalDelta:  result.kcalDelta  || 0,
+      protDelta:  result.protDelta  || 0,
+      carbsDelta: result.carbsDelta || 0,
+      fatsDelta:  result.fatsDelta  || 0,
+      label:      result.label || 'Activité',
     };
-    await saveNutritionGoals(goals);
-    _goals = goals;
+    _data.dayAdjust = _dayAdjust;
+    await saveNutrition(currentDate, _data);
     close();
     renderView();
-    showToast('Objectifs nutritionnels mis à jour ✓');
+    showToast(`⚡ ${result.label} — objectif ajusté ✓`);
   });
 }
 

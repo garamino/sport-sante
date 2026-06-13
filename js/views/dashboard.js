@@ -38,6 +38,10 @@ function buildWeekVisual(weekDates, weekWorkouts, weekSleeps, weekNuts, goals, t
         icon = '♻️'; dotColor = 'var(--text-secondary)';
       } else if (w.dayType === 'velo' || w.extraActivities?.includes('velo')) {
         icon = '🚴'; dotColor = w.bikeData ? C_OK : C_WARN;
+      } else if (w.dayType === 'course') {
+        icon = '🏃'; dotColor = w.cardioData ? C_OK : C_WARN;
+      } else if (w.dayType === 'marche') {
+        icon = '🚶'; dotColor = w.cardioData ? C_OK : C_WARN;
       } else if (w.dayType === 'muscu') {
         const done = w.exercises?.some(e => e.done);
         icon = '💪'; dotColor = done ? C_OK : C_WARN;
@@ -178,7 +182,14 @@ export async function render(container) {
 
     // Nutrition today
     const NUT_DEFAULTS = { kcal: 2500, prot: 160, carbs: 300, fats: 80 };
-    const goals = nutGoals || NUT_DEFAULTS;
+    const baseGoals = nutGoals || NUT_DEFAULTS;
+    const dayAdjust = nutData?.dayAdjust || null;
+    const goals = dayAdjust ? {
+      kcal:  baseGoals.kcal  + (dayAdjust.kcalDelta  || 0),
+      prot:  baseGoals.prot  + (dayAdjust.protDelta   || 0),
+      carbs: baseGoals.carbs + (dayAdjust.carbsDelta  || 0),
+      fats:  baseGoals.fats  + (dayAdjust.fatsDelta   || 0),
+    } : baseGoals;
     const allNutItems = nutData ? Object.values(nutData.sections || {}).flat() : [];
     const nutTotal = allNutItems.reduce(
       (acc, i) => ({ kcal: acc.kcal + (i.kcal||0), prot: acc.prot + (i.prot||0), carbs: acc.carbs + (i.carbs||0), fats: acc.fats + (i.fats||0) }),
@@ -187,6 +198,7 @@ export async function render(container) {
     const nutKcal   = Math.round(nutTotal.kcal);
     const nutPct    = Math.min(100, goals.kcal > 0 ? (nutKcal / goals.kcal) * 100 : 0);
     const nutColor  = nutPct >= 100 ? 'var(--danger)' : nutPct >= 80 ? 'var(--success)' : 'var(--accent)';
+    const nutAdjustLabel = dayAdjust ? `⚡ ${dayAdjust.label}` : null;
     const hasNut    = allNutItems.length > 0;
 
     // Hydration today
@@ -204,11 +216,20 @@ export async function render(container) {
     // Workout summary for today
     const doneCount = workout?.exercises?.filter(e => e.done).length || 0;
     const totalExercises = workout?.exercises?.length || 0;
-    const workoutDone = workout ? (workout.dayType === 'velo' ? !!workout.bikeData : doneCount > 0) : false;
+    const isCardio = workout?.dayType === 'course' || workout?.dayType === 'marche';
+    const workoutDone = workout ? (
+      workout.dayType === 'velo' ? !!workout.bikeData :
+      isCardio ? !!workout.cardioData :
+      doneCount > 0
+    ) : false;
     const workoutLabel = workout?.muscleGroup || workout?.templateId
       ? (workout.muscleGroup || '—')
       : null;
-    const workoutIcon = workout?.dayType === 'velo' ? '🚴' : workout?.dayType === 'rest' ? '♻️' : '💪';
+    const workoutIcon =
+      workout?.dayType === 'velo'    ? '🚴' :
+      workout?.dayType === 'course'  ? '🏃' :
+      workout?.dayType === 'marche'  ? '🚶' :
+      workout?.dayType === 'rest'    ? '♻️' : '💪';
 
     // Stat colors based on thresholds
     const C_OK = 'var(--success)';
@@ -260,6 +281,7 @@ export async function render(container) {
             ${workoutIcon} ${workoutLabel || 'Séance enregistrée'}
             ${workout.dayType === 'muscu' && totalExercises > 0 ? ` · ${doneCount}/${totalExercises} exercices` : ''}
             ${workout.dayType === 'velo' && workout.bikeData?.durationMinutes ? ` · ${workout.bikeData.durationMinutes} min · ${workout.bikeData.fcAvg} bpm` : ''}
+            ${isCardio && workout.cardioData?.durationMinutes ? ` · ${workout.cardioData.durationMinutes} min${workout.cardioData.distanceKm ? ' · ' + workout.cardioData.distanceKm + ' km' : ''}` : ''}
           </p>
         ` : `
           <p style="font-size:14px;color:var(--text-secondary)">Aucune séance enregistrée</p>
@@ -268,7 +290,10 @@ export async function render(container) {
 
       <a href="#/nutrition" class="card dash-nut-card" style="display:block;text-decoration:none;color:inherit">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
-          <div class="card-title" style="margin:0">🍽️ Nutrition</div>
+          <div style="display:flex;align-items:center;gap:7px">
+            <div class="card-title" style="margin:0">🍽️ Nutrition</div>
+            ${nutAdjustLabel ? `<span style="font-size:10px;color:#ffa726;background:rgba(255,167,38,.1);border:1px solid rgba(255,167,38,.3);border-radius:8px;padding:2px 6px;white-space:nowrap">${nutAdjustLabel}</span>` : ''}
+          </div>
           <span style="font-size:13px;font-weight:600;color:${nutColor}">
             ${nutKcal} <span style="color:var(--text-secondary);font-weight:400;font-size:12px">/ ${goals.kcal} kcal</span>
           </span>

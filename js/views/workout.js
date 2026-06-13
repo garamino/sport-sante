@@ -125,7 +125,7 @@ export async function render(container, resetDate = true) {
 
 async function renderWorkoutBody(body, existing) {
   // If a template is already chosen (saved), render its exercises
-  if (existing?.templateId || existing?.dayType === 'velo') {
+  if (existing?.templateId || existing?.dayType === 'velo' || existing?.dayType === 'course' || existing?.dayType === 'marche') {
     await renderActiveSession(body, existing);
   } else {
     await renderEmptyDay(body, existing);
@@ -157,6 +157,14 @@ async function renderEmptyDay(body, existing) {
             <span class="session-picker-label">${tpl.name}</span>
           </button>
         `).join('')}
+        <button class="session-picker-option" data-template-id="course" data-template-type="course">
+          <span class="session-picker-icon">🏃</span>
+          <span class="session-picker-label">Course à pied</span>
+        </button>
+        <button class="session-picker-option" data-template-id="marche" data-template-type="marche">
+          <span class="session-picker-icon">🚶</span>
+          <span class="session-picker-label">Marche</span>
+        </button>
         <button class="session-picker-option" data-template-id="rest" data-template-type="rest">
           <span class="session-picker-icon">♻️</span>
           <span class="session-picker-label">Repos complet</span>
@@ -201,6 +209,11 @@ async function renderActiveSession(body, existing) {
 
   if (dayType === 'velo') {
     renderVeloSession(body, existing);
+    return;
+  }
+
+  if (dayType === 'course' || dayType === 'marche') {
+    renderCardioSession(body, existing, dayType);
     return;
   }
 
@@ -442,6 +455,77 @@ function renderVeloSession(body, existing) {
           distanceKm: parseFloat(document.getElementById('bike-distance')?.value) || 0,
           elevationGain: parseInt(document.getElementById('bike-elevation')?.value) || 0,
           rpm: parseInt(document.getElementById('bike-rpm')?.value) || 0,
+        },
+      });
+      showToast('Séance enregistrée ✓');
+    } catch {
+      showToast('Erreur — réessaie');
+    }
+    btn.disabled = false;
+    btn.textContent = 'Enregistrer';
+  });
+}
+
+function renderCardioSession(body, existing, type) {
+  const icon  = type === 'course' ? '🏃' : '🚶';
+  const label = type === 'course' ? 'Course à pied' : 'Marche';
+  const cardio = existing?.cardioData || {};
+  const isSkipped = existing?.skipped;
+
+  body.innerHTML = `
+    <div class="card" style="text-align:center;padding:10px;position:relative">
+      <strong>${icon} ${label}</strong>
+      <button class="btn btn-small" id="change-session-btn" style="position:absolute;right:10px;top:50%;transform:translateY(-50%);font-size:11px;padding:4px 8px;background:none;border:1px solid var(--border);color:var(--text-secondary)">
+        Changer
+      </button>
+    </div>
+
+    ${isSkipped ? `<div class="skipped-banner">Séance non faite</div>` : ''}
+
+    <div class="card bike-form ${isSkipped ? 'skipped' : ''}">
+      <div class="card-title" style="margin-bottom:14px">Session ${label.toLowerCase()}</div>
+      <div class="form-row">
+        <div class="form-group"><label>Distance (km)</label><input type="number" id="cardio-distance" step="0.1" placeholder="${type === 'course' ? '8' : '5'}" value="${cardio.distanceKm || ''}"></div>
+        <div class="form-group"><label>Durée (min)</label><input type="number" id="cardio-duration" placeholder="${type === 'course' ? '45' : '60'}" value="${cardio.durationMinutes || ''}"></div>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label>FC moyenne (bpm)</label><input type="number" id="cardio-fc" placeholder="${type === 'course' ? '155' : '110'}" value="${cardio.fcAvg || ''}"></div>
+        <div class="form-group"><label>Cal. dépensées</label><input type="number" id="cardio-kcal" placeholder="${type === 'course' ? '500' : '300'}" value="${cardio.caloriesBurned || ''}"></div>
+      </div>
+    </div>
+
+    <div style="display:flex;gap:8px;margin-top:12px">
+      <button class="btn btn-small" id="skip-workout" style="background:none;border:1px solid var(--danger);color:var(--danger);flex-shrink:0">Séance non faite</button>
+      <button class="btn btn-success" id="save-workout" style="flex:1">Enregistrer</button>
+    </div>
+  `;
+
+  document.getElementById('change-session-btn').addEventListener('click', async () => {
+    const data = { ...existing };
+    delete data.templateId;
+    delete data.dayType;
+    await saveWorkout(currentDate, data);
+    await renderEmptyDay(body, data);
+  });
+
+  document.getElementById('skip-workout').addEventListener('click', async () => {
+    await saveWorkout(currentDate, { ...existing, skipped: true, cardioData: null });
+    showToast('Séance marquée non faite');
+    await renderCardioSession(body, await getWorkout(currentDate), type);
+  });
+
+  document.getElementById('save-workout').addEventListener('click', async () => {
+    const btn = document.getElementById('save-workout');
+    btn.disabled = true;
+    btn.textContent = 'Enregistrement...';
+    try {
+      await saveWorkout(currentDate, {
+        ...existing,
+        cardioData: {
+          distanceKm:      parseFloat(document.getElementById('cardio-distance')?.value) || 0,
+          durationMinutes: parseInt(document.getElementById('cardio-duration')?.value)  || 0,
+          fcAvg:           parseInt(document.getElementById('cardio-fc')?.value)         || 0,
+          caloriesBurned:  parseInt(document.getElementById('cardio-kcal')?.value)       || 0,
         },
       });
       showToast('Séance enregistrée ✓');
