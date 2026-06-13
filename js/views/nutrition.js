@@ -754,8 +754,7 @@ Réponds UNIQUEMENT avec ce JSON :
 {"kcalDelta":0,"protDelta":0,"carbsDelta":0,"fatsDelta":0,"label":"Repos","tips":["Conseil 1","Conseil 2"]}
 
 Si journée repos : kcalDelta = 0. label = 2-3 mots max (ex: "Séance muscu", "Sortie vélo", "Repos actif"). Valeurs entières. 2 tips courts et pratiques.` }] }],
-      generationConfig: { temperature: 0.1, maxOutputTokens: 4096, responseMimeType: 'application/json' },
-      thinkingConfig: { thinkingBudget: 0 },
+      generationConfig: { temperature: 0.1, maxOutputTokens: 16000, responseMimeType: 'application/json' },
     }),
   });
   if (!res.ok) {

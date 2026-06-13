@@ -213,23 +213,23 @@ export async function render(container) {
     const hydPctOther = hydGoal > 0 ? Math.min(100 - hydPctWater, (hydOther / hydGoal) * 100) : 0;
     const hydColor = hydTotal >= hydGoal ? 'var(--success)' : hydTotal >= hydGoal * 0.5 ? 'var(--accent)' : 'var(--text-secondary)';
 
-    // Workout summary for today
-    const doneCount = workout?.exercises?.filter(e => e.done).length || 0;
-    const totalExercises = workout?.exercises?.length || 0;
-    const isCardio = workout?.dayType === 'course' || workout?.dayType === 'marche';
-    const workoutDone = workout ? (
-      workout.dayType === 'velo' ? !!workout.bikeData :
-      isCardio ? !!workout.cardioData :
-      doneCount > 0
-    ) : false;
-    const workoutLabel = workout?.muscleGroup || workout?.templateId
-      ? (workout.muscleGroup || '—')
-      : null;
-    const workoutIcon =
-      workout?.dayType === 'velo'    ? '🚴' :
-      workout?.dayType === 'course'  ? '🏃' :
-      workout?.dayType === 'marche'  ? '🚶' :
-      workout?.dayType === 'rest'    ? '♻️' : '💪';
+    // Workout summary for today — multi-séances
+    const _sessions = Array.isArray(workout?.sessions) && workout.sessions.length > 0
+      ? workout.sessions
+      : workout ? [{ type: workout.dayType, bikeData: workout.bikeData, cardioData: workout.cardioData, exercises: workout.exercises, muscleGroup: workout.muscleGroup, skipped: workout.skipped }]
+      : [];
+    const _sIcon = s => s.type === 'velo' ? '🚴' : s.type === 'course' ? '🏃' : s.type === 'marche' ? '🚶' : s.type === 'rest' ? '♻️' : '💪';
+    const _sDone = s => !s.skipped && (s.type === 'rest' || s.type === 'velo' ? !!s.bikeData : s.type === 'course' || s.type === 'marche' ? !!s.cardioData : (s.exercises || []).some(e => e.done));
+    const _sLine = s => {
+      if (s.type === 'rest') return 'Repos complet';
+      if (s.type === 'velo') { const b = s.bikeData || {}; return ['Vélo', b.durationMinutes ? b.durationMinutes + ' min' : '', b.fcAvg ? b.fcAvg + ' bpm' : ''].filter(Boolean).join(' · '); }
+      if (s.type === 'course' || s.type === 'marche') { const c = s.cardioData || {}; return [(s.type === 'course' ? 'Course' : 'Marche'), c.durationMinutes ? c.durationMinutes + ' min' : '', c.distanceKm ? c.distanceKm + ' km' : ''].filter(Boolean).join(' · '); }
+      const done = (s.exercises || []).filter(e => e.done).length;
+      const total = (s.exercises || []).length;
+      return (s.muscleGroup || 'Muscu') + (total > 0 ? ` · ${done}/${total} ex.` : '');
+    };
+    const workoutIcon = _sessions.length > 0 ? _sessions.map(_sIcon).join('') : '💪';
+    const workoutDone = _sessions.length > 0 && _sessions.some(_sDone);
 
     // Stat colors based on thresholds
     const C_OK = 'var(--success)';
@@ -276,14 +276,11 @@ export async function render(container) {
 
       <div class="card">
         <div class="card-title">Aujourd'hui</div>
-        ${workout ? `
+        ${_sessions.length > 0 ? _sessions.map(s => `
           <p style="font-size:14px;color:var(--text-secondary);margin-bottom:4px">
-            ${workoutIcon} ${workoutLabel || 'Séance enregistrée'}
-            ${workout.dayType === 'muscu' && totalExercises > 0 ? ` · ${doneCount}/${totalExercises} exercices` : ''}
-            ${workout.dayType === 'velo' && workout.bikeData?.durationMinutes ? ` · ${workout.bikeData.durationMinutes} min · ${workout.bikeData.fcAvg} bpm` : ''}
-            ${isCardio && workout.cardioData?.durationMinutes ? ` · ${workout.cardioData.durationMinutes} min${workout.cardioData.distanceKm ? ' · ' + workout.cardioData.distanceKm + ' km' : ''}` : ''}
+            ${_sIcon(s)} ${_sLine(s)}${s.skipped ? ' <span style="color:var(--danger);font-size:12px">· non faite</span>' : ''}
           </p>
-        ` : `
+        `).join('') : `
           <p style="font-size:14px;color:var(--text-secondary)">Aucune séance enregistrée</p>
         `}
       </div>
