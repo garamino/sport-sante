@@ -691,34 +691,46 @@ function _describeWorkout(workout) {
   if (!workout || workout.skipped) return 'Journée sans activité sportive enregistrée';
   if (workout.dayType === 'rest') return 'Journée repos (programmé)';
 
-  if (workout.dayType === 'velo' || workout.bikeData) {
-    const b = workout.bikeData || {};
-    const parts = ['Séance vélo'];
-    if (b.durationMinutes) parts.push(`${b.durationMinutes} min`);
-    if (b.distanceKm)      parts.push(`${b.distanceKm} km`);
-    if (b.wattsAvg)        parts.push(`${b.wattsAvg} W moy.`);
-    if (b.fcAvg)           parts.push(`FC ${b.fcAvg} bpm`);
-    if (b.elevationGain)   parts.push(`D+ ${b.elevationGain} m`);
-    return parts.join(' · ');
-  }
+  // Multi-séances : décrire chaque session individuellement
+  const sessions = Array.isArray(workout.sessions) && workout.sessions.length > 0
+    ? workout.sessions
+    : [{ type: workout.dayType, bikeData: workout.bikeData, cardioData: workout.cardioData, exercises: workout.exercises, muscleGroup: workout.muscleGroup, skipped: workout.skipped }];
 
-  if (workout.dayType === 'course' || workout.dayType === 'marche') {
-    const c = workout.cardioData || {};
-    const name = workout.dayType === 'course' ? 'Course à pied' : 'Marche';
-    const parts = [name];
-    if (c.durationMinutes) parts.push(`${c.durationMinutes} min`);
-    if (c.distanceKm)      parts.push(`${c.distanceKm} km`);
-    if (c.fcAvg)           parts.push(`FC ${c.fcAvg} bpm`);
-    if (c.caloriesBurned)  parts.push(`${c.caloriesBurned} kcal brûlées`);
-    return parts.join(' · ');
-  }
+  const descs = sessions
+    .filter(s => !s.skipped && s.type !== 'rest')
+    .map(s => _describeSession(s));
 
-  const exercises = workout.exercises || [];
+  return descs.length > 0 ? descs.join(' + ') : 'Journée sans activité sportive enregistrée';
+}
+
+function _describeSession(s) {
+  if (s.type === 'velo' || s.bikeData) {
+    const b = s.bikeData || {};
+    const p = ['Vélo'];
+    if (b.durationMinutes) p.push(`${b.durationMinutes} min`);
+    if (b.distanceKm)      p.push(`${b.distanceKm} km`);
+    if (b.wattsAvg)        p.push(`${b.wattsAvg} W moy.`);
+    if (b.fcAvg)           p.push(`FC ${b.fcAvg} bpm`);
+    if (b.elevationGain)   p.push(`D+ ${b.elevationGain} m`);
+    return p.join(' · ');
+  }
+  if (s.type === 'course' || s.type === 'marche') {
+    const c = s.cardioData || {};
+    const name = s.type === 'course' ? 'Course à pied' : 'Marche';
+    const p = [name];
+    if (c.durationMinutes) p.push(`${c.durationMinutes} min`);
+    if (c.distanceKm)      p.push(`${c.distanceKm} km`);
+    if (c.fcAvg)           p.push(`FC ${c.fcAvg} bpm`);
+    if (c.caloriesBurned)  p.push(`${c.caloriesBurned} kcal brûlées`);
+    return p.join(' · ');
+  }
+  // muscu
+  const exercises = s.exercises || [];
   const done  = exercises.filter(e => e.done).length;
   const total = exercises.length;
-  const names = exercises.filter(e => e.done).map(e => e.name).slice(0, 5).join(', ');
-  const mg    = workout.muscleGroup ? ` (${workout.muscleGroup})` : '';
-  return `Séance musculation${mg} — ${done}/${total} exercices${names ? ' : ' + names : ''}`;
+  const names = exercises.filter(e => e.done).map(e => e.name).slice(0, 4).join(', ');
+  const mg    = s.muscleGroup ? ` (${s.muscleGroup})` : '';
+  return `Muscu${mg} — ${done}/${total} ex.${names ? ' : ' + names : ''}`;
 }
 
 async function _geminiDayAdjust(baseGoals, activityDesc, weight, apiKey) {
