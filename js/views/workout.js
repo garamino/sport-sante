@@ -5,6 +5,7 @@ import { importLatestCyclingActivity } from '../strava.js';
 
 let currentDate = null;
 let _ws = null; // état mutable des sessions du jour
+let _seedDone = false; // seeding des templates spéciaux fait une seule fois
 
 export async function render(container, resetDate = true) {
   if (resetDate || !currentDate) currentDate = today();
@@ -155,18 +156,19 @@ function buildWorkoutDoc(ws) {
   const muscuS   = sessions.find(s => s.type === 'muscu');
   const veloS    = sessions.find(s => s.type === 'velo' && s.bikeData);
   const cardioS  = sessions.find(s => (s.type === 'course' || s.type === 'marche') && s.cardioData);
-  return {
+  // Ne jamais inclure undefined — Firestore SDK v11 rejette les champs undefined
+  const doc = {
     sessions,
-    // Champs legacy maintenus pour compatibilité dashboard/charts/nutrition
-    dayType:         primary?.type,
-    templateId:      muscuS?.templateId,
-    muscleGroup:     muscuS?.muscleGroup,
-    exercises:       muscuS?.exercises,
-    bikeData:        veloS?.bikeData,
-    cardioData:      cardioS?.cardioData,
     skipped:         sessions.length > 0 && sessions.every(s => s.skipped),
     extraActivities: sessions.slice(1).map(s => s.type).filter(Boolean),
   };
+  if (primary?.type)        doc.dayType    = primary.type;
+  if (muscuS?.templateId)   doc.templateId = muscuS.templateId;
+  if (muscuS?.muscleGroup)  doc.muscleGroup = muscuS.muscleGroup;
+  if (muscuS?.exercises)    doc.exercises  = muscuS.exercises;
+  if (veloS?.bikeData)      doc.bikeData   = veloS.bikeData;
+  if (cardioS?.cardioData)  doc.cardioData = cardioS.cardioData;
+  return doc;
 }
 
 async function renderWorkoutBody(body, existing) {
@@ -184,8 +186,10 @@ const SPECIAL_SESSIONS = [
 ];
 
 async function ensureSpecialTemplates(templates) {
+  if (_seedDone) return templates;
   const existingTypes = new Set(templates.map(t => t.type).filter(Boolean));
   const missing = SPECIAL_SESSIONS.filter(s => !existingTypes.has(s.type));
+  _seedDone = true;
   if (missing.length === 0) return templates;
   for (const s of missing) {
     await saveWorkoutTemplate({ ...s, exerciseIds: [] });
@@ -280,22 +284,27 @@ async function renderSessionsList(body) {
   body.querySelectorAll('.session-picker-option').forEach(btn => {
     btn.addEventListener('click', async () => {
       closePicker();
-      const type = btn.dataset.type;
-      const templateId = btn.dataset.templateId;
-      const sessionId = 's_' + Date.now();
+      try {
+        const type = btn.dataset.type;
+        const templateId = btn.dataset.templateId;
+        const sessionId = 's_' + Date.now();
 
-      const newSession = { id: sessionId, type };
-      if (type === 'muscu') newSession.templateId = templateId;
+        const newSession = { id: sessionId, type };
+        if (type === 'muscu') newSession.templateId = templateId;
 
-      if (type === 'rest') {
-        _ws.sessions = [newSession];
-      } else {
-        _ws.sessions = (_ws.sessions || []).filter(s => s.type !== 'rest');
-        _ws.sessions.push(newSession);
+        if (type === 'rest') {
+          _ws.sessions = [newSession];
+        } else {
+          _ws.sessions = (_ws.sessions || []).filter(s => s.type !== 'rest');
+          _ws.sessions.push(newSession);
+        }
+
+        await saveWorkout(currentDate, buildWorkoutDoc(_ws));
+        await renderSessionsList(body);
+      } catch (err) {
+        showToast('Erreur : ' + err.message);
+        console.error(err);
       }
-
-      await saveWorkout(currentDate, buildWorkoutDoc(_ws));
-      await renderSessionsList(body);
     });
   });
 
