@@ -1,5 +1,5 @@
 import { today, formatDateFR, addDays, showToast } from '../utils.js';
-import { getWorkout, saveWorkout, getExerciseHistory, getWorkoutTemplates, getWorkoutTemplate, getExercise, getAllWorkouts } from '../db.js';
+import { getWorkout, saveWorkout, getExerciseHistory, getWorkoutTemplates, saveWorkoutTemplate, getWorkoutTemplate, getExercise, getAllWorkouts } from '../db.js';
 import { getGuideKey, openExerciseGuide } from '../exercise-guide.js';
 import { importLatestCyclingActivity } from '../strava.js';
 
@@ -174,11 +174,41 @@ async function renderWorkoutBody(body, existing) {
   await renderSessionsList(body);
 }
 
+// ── Templates spéciaux ───────────────────────────────────────────────────────
+
+const SPECIAL_SESSIONS = [
+  { name: 'Vélo – Cardio endurance', icon: '🚴', type: 'velo' },
+  { name: 'Course à pied',           icon: '🏃', type: 'course' },
+  { name: 'Marche',                  icon: '🚶', type: 'marche' },
+  { name: 'Repos complet',           icon: '♻️', type: 'rest' },
+];
+
+async function ensureSpecialTemplates(templates) {
+  const existingTypes = new Set(templates.map(t => t.type).filter(Boolean));
+  const missing = SPECIAL_SESSIONS.filter(s => !existingTypes.has(s.type));
+  if (missing.length === 0) return templates;
+  for (const s of missing) {
+    await saveWorkoutTemplate({ ...s, exerciseIds: [] });
+  }
+  return getWorkoutTemplates();
+}
+
 // ── Liste multi-séances ───────────────────────────────────────────────────────
 
 async function renderSessionsList(body) {
   const sessions = _ws.sessions || [];
-  const templates = await getWorkoutTemplates();
+  let templates = await getWorkoutTemplates();
+  templates = await ensureSpecialTemplates(templates);
+
+  // Muscu en premier (ordre alpha), puis spéciaux dans l'ordre défini
+  const specialOrder = SPECIAL_SESSIONS.map(s => s.type);
+  templates.sort((a, b) => {
+    const ai = specialOrder.indexOf(a.type), bi = specialOrder.indexOf(b.type);
+    if (ai === -1 && bi === -1) return a.name.localeCompare(b.name);
+    if (ai === -1) return -1;
+    if (bi === -1) return 1;
+    return ai - bi;
+  });
 
   // Pré-chargement des exercices pour les séances muscu
   const exerciseMap = {};
@@ -202,27 +232,11 @@ async function renderSessionsList(body) {
           <button class="guide-modal-close" id="close-picker">&times;</button>
         </div>
         ${templates.map(tpl => `
-          <button class="session-picker-option" data-type="muscu" data-template-id="${tpl.id}">
+          <button class="session-picker-option" data-type="${tpl.type || 'muscu'}" data-template-id="${tpl.id}">
             <span class="session-picker-icon">${tpl.icon || '💪'}</span>
             <span class="session-picker-label">${tpl.name}</span>
           </button>
         `).join('')}
-        <button class="session-picker-option" data-type="velo" data-template-id="velo">
-          <span class="session-picker-icon">🚴</span>
-          <span class="session-picker-label">Vélo – Cardio endurance</span>
-        </button>
-        <button class="session-picker-option" data-type="course" data-template-id="course">
-          <span class="session-picker-icon">🏃</span>
-          <span class="session-picker-label">Course à pied</span>
-        </button>
-        <button class="session-picker-option" data-type="marche" data-template-id="marche">
-          <span class="session-picker-icon">🚶</span>
-          <span class="session-picker-label">Marche</span>
-        </button>
-        <button class="session-picker-option" data-type="rest" data-template-id="rest">
-          <span class="session-picker-icon">♻️</span>
-          <span class="session-picker-label">Repos complet</span>
-        </button>
       </div>
     </div>
   `;

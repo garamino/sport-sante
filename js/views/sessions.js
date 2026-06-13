@@ -36,24 +36,32 @@ export async function render(container) {
         <span class="library-count">${templates.length}</span>
       </div>
 
-      ${templatesWithExercises.map(tpl => `
-        <div class="session-template-card">
-          <div class="session-template-header">
-            <span class="session-template-icon">${tpl.icon || '💪'}</span>
-            <span class="session-template-name">${tpl.name}</span>
-            <span class="session-template-count">${tpl.exercises.length} ex.</span>
-          </div>
-          <div class="session-template-exercises">
-            ${tpl.exercises.map((ex, i) => `
-              <div class="session-exercise-row">
-                <span class="session-exercise-num">${i + 1}</span>
-                <span class="session-exercise-name">${ex.name}</span>
-                <span class="session-exercise-sets">${ex.defaultSets} × ${ex.defaultReps}</span>
+      ${templatesWithExercises.map(tpl => {
+        const isSpecial = ['velo', 'course', 'marche', 'rest'].includes(tpl.type);
+        return `
+          <div class="session-template-card">
+            <div class="session-template-header">
+              <span class="session-template-icon">${tpl.icon || '💪'}</span>
+              <span class="session-template-name">${tpl.name}</span>
+              ${isSpecial
+                ? `<span class="session-template-count" style="background:rgba(79,195,247,.1);color:var(--accent);font-size:11px">Activité</span>`
+                : `<span class="session-template-count">${tpl.exercises.length} ex.</span>`
+              }
+            </div>
+            ${!isSpecial && tpl.exercises.length > 0 ? `
+              <div class="session-template-exercises">
+                ${tpl.exercises.map((ex, i) => `
+                  <div class="session-exercise-row">
+                    <span class="session-exercise-num">${i + 1}</span>
+                    <span class="session-exercise-name">${ex.name}</span>
+                    <span class="session-exercise-sets">${ex.defaultSets} × ${ex.defaultReps}</span>
+                  </div>
+                `).join('')}
               </div>
-            `).join('')}
+            ` : ''}
           </div>
-        </div>
-      `).join('')}
+        `;
+      }).join('')}
     `;
   } catch (err) {
     container.innerHTML = `<div class="empty-state"><p>Erreur</p><p style="font-size:12px">${err.message}</p></div>`;
