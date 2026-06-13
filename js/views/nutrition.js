@@ -754,10 +754,14 @@ Réponds UNIQUEMENT avec ce JSON :
 {"kcalDelta":0,"protDelta":0,"carbsDelta":0,"fatsDelta":0,"label":"Repos","tips":["Conseil 1","Conseil 2"]}
 
 Si journée repos : kcalDelta = 0. label = 2-3 mots max (ex: "Séance muscu", "Sortie vélo", "Repos actif"). Valeurs entières. 2 tips courts et pratiques.` }] }],
-      generationConfig: { temperature: 0.1, maxOutputTokens: 1024, responseMimeType: 'application/json' },
+      generationConfig: { temperature: 0.1, maxOutputTokens: 4096, responseMimeType: 'application/json' },
+      thinkingConfig: { thinkingBudget: 0 },
     }),
   });
-  if (!res.ok) throw new Error(`Gemini ${res.status}`);
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error?.message || `Erreur API Gemini (${res.status})`);
+  }
   return _extractGeminiJSON(await res.json(), 'object');
 }
 
