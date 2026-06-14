@@ -1210,9 +1210,10 @@ Priorité pour estimer les valeurs nutritionnelles :
 2. Sinon, identifie le produit (marque, type) depuis l'emballage et utilise tes connaissances nutritionnelles pour estimer.
 3. Si aucun emballage → estime visuellement la portion et les macros typiques de cet aliment.
 Unités acceptées : "g", "ml", "pièce", "tranche", "portion".
+Important : si l'emballage indique qu'une portion = X g (ex: "pour 30g", "serving size 100g"), utilise directement qty=X et unit="g". Sinon, si l'unité n'est pas "g" ou "ml", ajoute le champ "portionWeightG" avec le poids estimé en grammes d'une unité (ex: pour 1 portion de 150g → portionWeightG:150).
 
 Réponds UNIQUEMENT avec un tableau JSON valide, sans texte autour :
-[{"name":"Nom de l'aliment","qty":3,"unit":"pièce","kcal":180,"prot":1.5,"carbs":36,"fats":3}]
+[{"name":"Nom de l'aliment","qty":100,"unit":"g","portionWeightG":null,"kcal":180,"prot":1.5,"carbs":36,"fats":3}]
 
 Maximum 8 aliments. Valeurs réalistes.`,
             },
@@ -1236,30 +1237,48 @@ Maximum 8 aliments. Valeurs réalistes.`,
       return;
     }
 
-    // Copie mutable des quantités (base = valeur Gemini)
-    const qtys = foods.map(f => f.qty);
+    // Copie mutable des quantités et unités (base = valeur Gemini)
+    const qtys  = foods.map(f => f.qty);
+    const units = foods.map(f => f.unit);
 
-    function macrosForQty(f, qty) {
-      const ratio = qty / f.qty;
+    // Convertit q unités u en grammes (null si impossible)
+    function toGrams(q, u, pwg) {
+      if (u === 'g' || u === 'ml') return q;
+      if (pwg) return q * pwg;
+      return null;
+    }
+
+    function macrosForQty(f, qty, unit) {
+      const origG = toGrams(f.qty, f.unit, f.portionWeightG);
+      const curG  = toGrams(qty, unit, f.portionWeightG);
+      const ratio = (origG !== null && curG !== null) ? curG / origG : qty / f.qty;
       return {
-        kcal: Math.round(f.kcal * ratio),
-        prot: round1(f.prot * ratio),
+        kcal:  Math.round(f.kcal  * ratio),
+        prot:  round1(f.prot  * ratio),
         carbs: round1(f.carbs * ratio),
-        fats: round1(f.fats * ratio),
+        fats:  round1(f.fats  * ratio),
       };
     }
 
+    const UNIT_OPTS = ['g', 'ml', 'pièce', 'tranche', 'portion'];
+
     function foodRowHTML(f, i) {
-      const m = macrosForQty(f, qtys[i]);
+      const m = macrosForQty(f, qtys[i], units[i]);
+      const unitOpts = UNIT_OPTS.map(u =>
+        `<option value="${u}" ${units[i] === u ? 'selected' : ''}>${u}</option>`
+      ).join('');
       return `
         <div class="nut-photo-food-row" data-idx="${i}">
           <input type="checkbox" data-idx="${i}" checked style="margin-top:2px;flex-shrink:0">
           <div style="min-width:0;flex:1">
             <div style="font-size:13px;font-weight:500;margin-bottom:4px">${f.name}</div>
             <div style="display:flex;align-items:center;gap:6px;margin-bottom:3px">
-              <input type="number" class="photo-qty-input" data-idx="${i}" value="${qtys[i]}" min="1" step="1"
+              <input type="number" class="photo-qty-input" data-idx="${i}" value="${qtys[i]}" min="0.1" step="1"
                 style="width:64px;padding:3px 6px;font-size:12px;border-radius:6px;border:1px solid var(--border);background:var(--bg-secondary);color:var(--text-primary);text-align:center">
-              <span style="font-size:12px;color:var(--text-secondary)">${f.unit}</span>
+              <select class="photo-unit-select" data-idx="${i}"
+                style="padding:3px 6px;font-size:12px;border-radius:6px;border:1px solid var(--border);background:var(--bg-secondary);color:var(--text-primary)">
+                ${unitOpts}
+              </select>
             </div>
             <div class="photo-macros" data-idx="${i}" style="font-size:11px;color:var(--text-secondary)">
               ${m.kcal} kcal · P:${m.prot}g · G:${m.carbs}g · L:${m.fats}g
@@ -1277,15 +1296,41 @@ Maximum 8 aliments. Valeurs réalistes.`,
         Ajouter les sélectionnés
       </button>`;
 
-    // Mise à jour des macros en temps réel
+    function refreshMacros(i) {
+      const m = macrosForQty(foods[i], qtys[i], units[i]);
+      el.querySelector(`.photo-macros[data-idx="${i}"]`).textContent =
+        `${m.kcal} kcal · P:${m.prot}g · G:${m.carbs}g · L:${m.fats}g`;
+    }
+
     el.querySelectorAll('.photo-qty-input').forEach(input => {
       input.addEventListener('input', () => {
         const i = parseInt(input.dataset.idx);
-        const qty = Math.max(1, parseFloat(input.value) || 1);
-        qtys[i] = qty;
-        const m = macrosForQty(foods[i], qty);
-        el.querySelector(`.photo-macros[data-idx="${i}"]`).textContent =
-          `${m.kcal} kcal · P:${m.prot}g · G:${m.carbs}g · L:${m.fats}g`;
+        qtys[i] = Math.max(0.1, parseFloat(input.value) || 0.1);
+        refreshMacros(i);
+      });
+    });
+
+    el.querySelectorAll('.photo-unit-select').forEach(select => {
+      select.addEventListener('change', () => {
+        const i      = parseInt(select.dataset.idx);
+        const f      = foods[i];
+        const oldUnit = units[i];
+        const newUnit = select.value;
+        const pwg    = f.portionWeightG;
+
+        // Convertir la quantité pour conserver la même masse
+        if (pwg && oldUnit !== newUnit) {
+          const grams = toGrams(qtys[i], oldUnit, pwg);
+          if (grams !== null) {
+            qtys[i] = (newUnit === 'g' || newUnit === 'ml')
+              ? Math.round(grams)
+              : Math.max(0.1, Math.round(grams / pwg * 10) / 10);
+            el.querySelector(`.photo-qty-input[data-idx="${i}"]`).value = qtys[i];
+          }
+        }
+
+        units[i] = newUnit;
+        refreshMacros(i);
       });
     });
 
@@ -1295,11 +1340,12 @@ Maximum 8 aliments. Valeurs réalistes.`,
       for (const cb of checked) {
         const i = parseInt(cb.dataset.idx);
         const f = foods[i];
-        const qty = qtys[i];
-        const m = macrosForQty(f, qty);
+        const qty  = qtys[i];
+        const unit = units[i];
+        const m = macrosForQty(f, qty, unit);
         await addEntry({
           name: f.name, brand: '',
-          qty, unit: f.unit,
+          qty, unit,
           kcal: m.kcal, prot: m.prot, carbs: m.carbs, fats: m.fats,
         });
       }
