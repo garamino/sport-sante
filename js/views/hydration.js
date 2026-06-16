@@ -61,7 +61,7 @@ function renderView() {
   const barColor  = total >= _goal ? 'var(--success)' : total >= _goal * 0.7 ? 'var(--accent)' : '#ef9a9a';
   const totalColor = total >= _goal ? 'var(--success)' : total >= _goal * 0.5 ? 'var(--text-primary)' : 'var(--text-secondary)';
 
-  const QUICK_AMOUNTS = [150, 200, 250, 330, 500];
+  const QUICK_AMOUNTS = [200, 250, 300, 330, 500];
 
   _container.innerHTML = `
     <div class="date-nav-row">
@@ -109,7 +109,7 @@ function renderView() {
         ${QUICK_AMOUNTS.map(ml => `
           <button class="hyd-quick-btn btn btn-small"
             data-ml="${ml}"
-            style="flex:1;min-width:56px;background:var(--bg-secondary);border:1px solid var(--border);font-size:13px;padding:8px 4px">
+            style="flex:1;min-width:56px;background:var(--bg-secondary);border:1px solid var(--border);color:var(--text-primary);font-size:13px;padding:8px 4px">
             +${ml}
           </button>`).join('')}
       </div>
