@@ -143,13 +143,16 @@ function buildWeekVisual(weekDates, weekWorkouts, weekSleeps, weekNuts, goals, t
     </div>`;
 }
 
-export async function render(container) {
+export async function render(container, weekOffset = 0) {
   container.innerHTML = '<div class="spinner"></div>';
 
   try {
     const todayStr = today();
-    const weekDates = getWeekDates(todayStr);
-    const mondayStr = weekDates[0];
+    const thisWeekDates = getWeekDates(todayStr);
+    const mondayStr = thisWeekDates[0];
+
+    const viewMondayStr = addDays(mondayStr, weekOffset * 7);
+    const viewWeekDates = Array.from({ length: 7 }, (_, i) => addDays(viewMondayStr, i));
 
     const [profile, workout, sleep, recentSleep, lastWeeklies, nutData, nutGoals, hydData, hydGoal, weekWorkouts, weekSleeps, weekNuts] = await Promise.all([
       getUserProfile().catch(() => null),
@@ -161,9 +164,9 @@ export async function render(container) {
       getNutritionGoals().catch(() => null),
       getHydration(todayStr).catch(() => null),
       getHydrationGoal().catch(() => 2000),
-      Promise.all(weekDates.map(d => getWorkout(d).catch(() => null))),
-      Promise.all(weekDates.map(d => getSleep(d).catch(() => null))),
-      Promise.all(weekDates.map(d => getNutrition(d).catch(() => null))),
+      Promise.all(viewWeekDates.map(d => getWorkout(d).catch(() => null))),
+      Promise.all(viewWeekDates.map(d => getSleep(d).catch(() => null))),
+      Promise.all(viewWeekDates.map(d => getNutrition(d).catch(() => null))),
     ]);
 
     // Weight delta vs previous weekly entry
@@ -177,8 +180,8 @@ export async function render(container) {
     const deltaArrow = deltaWeight > 0 ? '↑' : '↓';
     const deltaColor = deltaWeight === 0 ? 'var(--text-secondary)' : deltaWeight > 0 ? 'var(--success)' : 'var(--danger)';
 
-    const sundayStr = addDays(mondayStr, 6);
-    const weekVisual = buildWeekVisual(weekDates, weekWorkouts, weekSleeps, weekNuts, nutGoals, todayStr);
+    const viewSundayStr = addDays(viewMondayStr, 6);
+    const weekVisual = buildWeekVisual(viewWeekDates, weekWorkouts, weekSleeps, weekNuts, nutGoals, todayStr);
 
     // Nutrition today
     const NUT_DEFAULTS = { kcal: 2500, prot: 160, carbs: 300, fats: 80 };
@@ -328,9 +331,13 @@ export async function render(container) {
       </a>
 
       <div class="card">
-        <div style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:14px">
-          <div class="card-title" style="margin:0">Cette semaine</div>
-          <span style="font-size:11px;color:var(--text-secondary)">${fmtShortDate(mondayStr)} – ${fmtShortDate(sundayStr)}</span>
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
+          <button id="week-prev-btn" style="background:none;border:none;color:var(--text-secondary);font-size:18px;cursor:pointer;padding:0 6px;line-height:1" title="Semaine précédente">‹</button>
+          <div style="display:flex;flex-direction:column;align-items:center;gap:2px">
+            <span class="card-title" style="margin:0">${weekOffset === 0 ? 'Cette semaine' : weekOffset === -1 ? 'Semaine dernière' : 'Semaine du ' + fmtShortDate(viewMondayStr)}</span>
+            <span style="font-size:11px;color:var(--text-secondary)">${fmtShortDate(viewMondayStr)} – ${fmtShortDate(viewSundayStr)}</span>
+          </div>
+          <button id="week-next-btn" style="background:none;border:none;color:${weekOffset < 0 ? 'var(--text-secondary)' : 'transparent'};font-size:18px;cursor:pointer;padding:0 6px;line-height:1;pointer-events:${weekOffset < 0 ? 'auto' : 'none'}" title="Semaine suivante">›</button>
         </div>
         ${weekVisual}
       </div>
@@ -377,6 +384,13 @@ export async function render(container) {
         Ajouter une note
       </button>
     `;
+
+    document.getElementById('week-prev-btn')?.addEventListener('click', () => {
+      render(container, weekOffset - 1);
+    });
+    document.getElementById('week-next-btn')?.addEventListener('click', () => {
+      if (weekOffset < 0) render(container, weekOffset + 1);
+    });
 
     document.getElementById('ask-coach-btn')?.addEventListener('click', () => {
       showCoachAdvice('workout', todayStr);

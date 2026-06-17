@@ -74,7 +74,7 @@ Conclus toujours ton conseil par un avis sur la prochaine séance (section "SÉA
 - Si rien n'est enregistré pour demain → ne devine pas et n'invente pas de séance. Conseille sur la récupération ou suggère quel type de séance serait pertinent selon l'historique récent.
 Prends en compte : douleurs/blessures signalées dans les notes, qualité du sommeil récent, charge des derniers jours, nutrition du jour.`;
 
-function buildUserMessage(trigger, date, data, coachWindowDays, userMessage) {
+function buildUserMessage(trigger, date, data, coachWindowDays, userMessage, currentTime) {
   const parts = [];
 
   // Historical summary (data older than the window)
@@ -86,7 +86,7 @@ function buildUserMessage(trigger, date, data, coachWindowDays, userMessage) {
   // What was just saved
   parts.push(`\n=== ÉVÉNEMENT ===`);
   parts.push(`Type : ${trigger}`);
-  parts.push(`Date : ${date}`);
+  parts.push(`Date : ${date}${currentTime ? ` — Heure actuelle : ${currentTime}` : ''}`);
 
   // User context / notes historisées
   if (data.coachNotes && data.coachNotes.length > 0) {
@@ -139,7 +139,8 @@ function buildUserMessage(trigger, date, data, coachWindowDays, userMessage) {
       parts.push(`\n=== NUTRITION DU JOUR ===`);
       const g = data.nutritionGoals;
       const goalLine = g ? ` (obj: ${g.kcal} kcal, ${g.prot}g prot)` : "";
-      parts.push(`Total : ${kcal} kcal · P: ${prot}g · G: ${carbs}g · L: ${fats}g${goalLine}`);
+      const timeNote = currentTime ? ` — relevé à ${currentTime}` : "";
+      parts.push(`Total : ${kcal} kcal · P: ${prot}g · G: ${carbs}g · L: ${fats}g${goalLine}${timeNote}`);
       // Per-meal breakdown
       const SECTION_LABELS = {
         breakfast: "Petit-déj", morningSnack: "Collation matin", lunch: "Déjeuner",
@@ -169,7 +170,8 @@ function buildUserMessage(trigger, date, data, coachWindowDays, userMessage) {
       parts.push(`\n=== HYDRATATION DU JOUR ===`);
       const goal = data.hydrationGoal || 2000;
       const pct = Math.round((total / goal) * 100);
-      parts.push(`Eau : ${water} ml · Autres boissons : ${nutLiquids} ml · Total : ${total} ml / ${goal} ml (${pct}%)`);
+      const timeNote = currentTime ? ` — relevé à ${currentTime} (journée en cours)` : '';
+      parts.push(`Eau : ${water} ml · Autres boissons : ${nutLiquids} ml · Total : ${total} ml / ${goal} ml (${pct}%)${timeNote}`);
     }
   }
 
@@ -338,7 +340,7 @@ exports.getCoachAdvice = onCall(
     const uid = request.auth.uid;
 
     // 2. Validate input
-    const { trigger, date, userMessage } = request.data;
+    const { trigger, date, userMessage, currentTime } = request.data;
     if (!["workout", "sleep", "weight"].includes(trigger)) {
       throw new HttpsError("invalid-argument", "Trigger invalide.");
     }
@@ -611,7 +613,7 @@ exports.getCoachAdvice = onCall(
     }
 
     // 8. Build prompt and call Claude
-    const promptMessage = buildUserMessage(trigger, date, data, coachWindowDays, userMessage);
+    const promptMessage = buildUserMessage(trigger, date, data, coachWindowDays, userMessage, currentTime);
 
     try {
       const genAI = new GoogleGenerativeAI(apiKey);

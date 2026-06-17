@@ -57,13 +57,14 @@ export function showCoachAdvice(trigger, date) {
     const messageZone = overlay.querySelector('.coach-message');
     inputZone.classList.add('hidden');
     messageZone.classList.remove('hidden');
-    fetchCoachAdvice(overlay, trigger, date, userMessage);
+    const currentTime = new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+    fetchCoachAdvice(overlay, trigger, date, userMessage, currentTime);
   });
 }
 
-async function fetchCoachAdvice(overlay, trigger, date, userMessage) {
+async function fetchCoachAdvice(overlay, trigger, date, userMessage, currentTime) {
   try {
-    const result = await getCoachAdviceFn({ trigger, date, userMessage });
+    const result = await getCoachAdviceFn({ trigger, date, userMessage, currentTime });
       const data = result.data;
       const messageEl = overlay.querySelector('.coach-message');
 
