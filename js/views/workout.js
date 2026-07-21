@@ -1,7 +1,8 @@
 import { today, formatDateFR, addDays, showToast } from '../utils.js';
-import { getWorkout, saveWorkout, getExerciseHistory, getWorkoutTemplates, saveWorkoutTemplate, getWorkoutTemplate, getExercise, getAllWorkouts } from '../db.js';
+import { getWorkout, saveWorkout, getExerciseHistory, getWorkoutTemplates, saveWorkoutTemplate, getWorkoutTemplate, getExercise, getExercises, getAllWorkouts } from '../db.js';
 import { getGuideKey, openExerciseGuide } from '../exercise-guide.js';
 import { importLatestCyclingActivity } from '../strava.js';
+import { startSessionTimer } from '../workout-timer.js';
 
 let currentDate = null;
 let _ws = null; // état mutable des sessions du jour
@@ -36,8 +37,12 @@ export async function render(container, resetDate = true) {
         </a>
       </div>
 
+      <button class="btn btn-start-session" id="start-session-timer" style="width:100%;margin-bottom:12px;background:var(--accent);color:#04141f;border:none;font-weight:600">▶ Démarrer la séance (chrono)</button>
+
       <div id="workout-body"></div>
     `;
+
+    document.getElementById('start-session-timer').addEventListener('click', () => startSessionTimer());
 
     // Date navigation
     document.getElementById('prev-day').addEventListener('click', () => {
@@ -217,13 +222,18 @@ async function renderSessionsList(body) {
   // Pré-chargement des exercices pour les séances muscu
   const exerciseMap = {};
   for (const s of sessions) {
-    if (s.type === 'muscu' && s.templateId) {
+    if (s.type === 'muscu') {
       try {
-        const tpl = await getWorkoutTemplate(s.templateId);
-        if (tpl) {
-          const exs = await Promise.all((tpl.exerciseIds || []).map(id => getExercise(id)));
-          exerciseMap[s.id] = { tpl, exercises: exs.filter(Boolean) };
+        let tpl = null;
+        let ids = [];
+        if (s.templateId) {
+          tpl = await getWorkoutTemplate(s.templateId);
+          ids = tpl?.exerciseIds || [];
         }
+        if (Array.isArray(s.exerciseIds)) ids = [...ids, ...s.exerciseIds];
+        ids = [...new Set(ids)];
+        const exs = await Promise.all(ids.map(id => getExercise(id)));
+        exerciseMap[s.id] = { tpl, exercises: exs.filter(Boolean) };
       } catch {}
     }
   }
@@ -241,6 +251,10 @@ async function renderSessionsList(body) {
             <span class="session-picker-label">${tpl.name}</span>
           </button>
         `).join('')}
+        <button class="session-picker-option" data-type="free">
+          <span class="session-picker-icon">🧩</span>
+          <span class="session-picker-label">Séance libre (exercices à la carte)</span>
+        </button>
       </div>
     </div>
   `;
@@ -289,8 +303,10 @@ async function renderSessionsList(body) {
         const templateId = btn.dataset.templateId;
         const sessionId = 's_' + Date.now();
 
-        const newSession = { id: sessionId, type };
+        const sessionType = type === 'free' ? 'muscu' : type;
+        const newSession = { id: sessionId, type: sessionType };
         if (type === 'muscu') newSession.templateId = templateId;
+        if (type === 'free') { newSession.name = 'Séance libre'; newSession.exerciseIds = []; }
 
         if (type === 'rest') {
           _ws.sessions = [newSession];
@@ -338,7 +354,7 @@ function sessionCardHTML(session, tpl, exercises) {
 
   // muscu
   const icon = tpl?.icon || '💪';
-  const name = tpl?.name || 'Séance muscu';
+  const name = tpl?.name || session.name || 'Séance muscu';
   const isSkipped = session.skipped;
 
   return `
@@ -353,6 +369,8 @@ function sessionCardHTML(session, tpl, exercises) {
       <div style="${isSkipped ? 'opacity:0.5;' : ''}padding:0 6px 4px">
         ${muscuFormHTML(session, exercises)}
       </div>
+
+      ${isSkipped ? '' : `<button class="btn btn-small btn-add-exercise" data-session-id="${sid}" style="width:calc(100% - 20px);margin:0 10px 4px;background:none;border:1px dashed var(--border);color:var(--text-secondary)">+ Ajouter un exercice</button>`}
 
       <div style="display:flex;gap:8px;margin:10px;margin-top:4px">
         <button class="btn btn-small btn-skip-session" data-session-id="${sid}" style="background:none;border:1px solid var(--danger);color:var(--danger);flex-shrink:0">Non faite</button>
@@ -445,9 +463,10 @@ function cardioFormHTML(session) {
 function muscuFormHTML(session, exercises) {
   const sid = session.id;
   const isSkipped = session.skipped;
+  const removable = new Set(session.exerciseIds || []);
 
   if (exercises.length === 0) {
-    return `<div class="empty-state" style="padding:12px"><p style="color:var(--text-secondary);font-size:13px">Aucun exercice dans cette séance</p></div>`;
+    return `<div class="empty-state" style="padding:12px"><p style="color:var(--text-secondary);font-size:13px">Aucun exercice — ajoute-en un ci-dessous</p></div>`;
   }
 
   return exercises.map((ex, i) => {
@@ -481,6 +500,7 @@ function muscuFormHTML(session, exercises) {
               ${ex.weight && ex.weight !== '—' ? `<span class="exercise-tag">${ex.weight}</span>` : ''}
             </div>
           </div>
+          ${!isSkipped && removable.has(ex.id) ? `<button class="btn-remove-exercise" data-ex-id="${ex.id}" title="Retirer l'exercice" style="background:none;border:none;color:var(--text-secondary);font-size:20px;line-height:1;cursor:pointer;padding:0 4px 0 6px;align-self:flex-start">&times;</button>` : ''}
         </div>
         <div class="exercise-note">
           <textarea id="ex-note-${sid}-${i}" placeholder="Note perso..." rows="1">${note}</textarea>
@@ -583,6 +603,22 @@ function bindSessionEvents(body, session, exercises) {
     });
   });
 
+  // Ajouter un exercice (modale bibliothèque)
+  card.querySelector(`.btn-add-exercise[data-session-id="${sid}"]`)?.addEventListener('click', () => {
+    openExercisePicker(body, session, exercises.map(e => e.id));
+  });
+
+  // Retirer un exercice ajouté à la carte
+  card.querySelectorAll('.btn-remove-exercise').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const exId = btn.dataset.exId;
+      session.exerciseIds = (session.exerciseIds || []).filter(id => id !== exId);
+      await saveWorkout(currentDate, buildWorkoutDoc(_ws));
+      showToast('Exercice retiré');
+      await renderSessionsList(body);
+    });
+  });
+
   // Import Strava (vélo uniquement)
   if (type === 'velo') {
     card.querySelector(`.btn-strava-import[data-session-id="${sid}"]`)?.addEventListener('click', async (e) => {
@@ -614,6 +650,74 @@ function bindSessionEvents(body, session, exercises) {
       }
     });
   }
+}
+
+async function openExercisePicker(body, session, existingIds = []) {
+  const overlay = document.createElement('div');
+  overlay.className = 'session-picker-overlay';
+  overlay.innerHTML = `
+    <div class="session-picker-sheet">
+      <div class="session-picker-sheet-header">
+        <span>Ajouter un exercice</span>
+        <button class="guide-modal-close" id="close-ex-picker">&times;</button>
+      </div>
+      <input type="text" id="ex-picker-search" placeholder="Rechercher un exercice…" autocomplete="off"
+        style="width:calc(100% - 20px);margin:0 10px 8px;padding:9px 12px;background:var(--bg-secondary);border:1px solid var(--border);border-radius:8px;color:var(--text-primary);font-size:14px">
+      <div id="ex-picker-list"><div class="spinner"></div></div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+
+  const close = () => overlay.remove();
+  overlay.querySelector('#close-ex-picker').addEventListener('click', close);
+  overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
+
+  let all = [];
+  try {
+    all = await getExercises();
+  } catch {
+    overlay.querySelector('#ex-picker-list').innerHTML = `<p style="padding:12px;color:var(--text-secondary);font-size:13px">Erreur de chargement de la bibliothèque</p>`;
+    return;
+  }
+
+  const exclude = new Set(existingIds);
+  const available = all.filter(ex => !exclude.has(ex.id));
+  const listEl = overlay.querySelector('#ex-picker-list');
+
+  function draw(filter = '') {
+    const q = filter.trim().toLowerCase();
+    const items = available.filter(ex => !q || (ex.name || '').toLowerCase().includes(q));
+    if (items.length === 0) {
+      const msg = available.length === 0 ? 'Tous les exercices sont déjà dans la séance' : 'Aucun exercice trouvé';
+      listEl.innerHTML = `<p style="padding:12px;color:var(--text-secondary);font-size:13px">${msg}</p>`;
+      return;
+    }
+    listEl.innerHTML = items.map(ex => `
+      <button class="session-picker-option" data-ex-id="${ex.id}">
+        <span class="session-picker-icon">💪</span>
+        <span class="session-picker-label">${ex.name}</span>
+      </button>
+    `).join('');
+    listEl.querySelectorAll('.session-picker-option').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const exId = btn.dataset.exId;
+        session.exerciseIds = [...(session.exerciseIds || []), exId];
+        close();
+        try {
+          await saveWorkout(currentDate, buildWorkoutDoc(_ws));
+          showToast('Exercice ajouté ✓');
+          await renderSessionsList(body);
+        } catch (err) {
+          showToast('Erreur : ' + err.message);
+        }
+      });
+    });
+  }
+
+  draw();
+  const search = overlay.querySelector('#ex-picker-search');
+  search.addEventListener('input', () => draw(search.value));
+  search.focus();
 }
 
 async function openExerciseHistory(exerciseId, exerciseName, date) {
