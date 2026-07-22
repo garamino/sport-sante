@@ -1,5 +1,5 @@
 import { getAllWeeklies, getAllSleep, getAllWorkouts, getAllIntakes, getAllNutrition, getNutritionGoals } from '../db.js';
-import { NIGHT_CUTOFF } from '../utils.js';
+import { NIGHT_CUTOFF, addDays } from '../utils.js';
 
 const SLEEP_PRODUCTS = [
   'Metasleep',
@@ -373,7 +373,11 @@ async function renderChart(type) {
         canvas.parentElement.classList.remove('hidden');
         emptyEl.classList.add('hidden');
 
-        const colors = data.map(s =>
+        // Comble les jours manquants avec des barres vides (quality: null)
+        const filled = fillSleepGaps(data);
+
+        const colors = filled.map(s =>
+          s.quality == null ? 'transparent' :
           s.quality >= 7 ? chartColors.success :
           s.quality >= 4 ? chartColors.warning :
           chartColors.danger
@@ -382,13 +386,13 @@ async function renderChart(type) {
         chartInstance = new Chart(canvas.getContext('2d'), {
           type: 'bar',
           data: {
-            labels: data.map(s => {
+            labels: filled.map(s => {
               const d = new Date(s.date + 'T00:00:00');
               return d.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' });
             }),
             datasets: [{
               label: 'Qualité',
-              data: data.map(s => s.quality),
+              data: filled.map(s => s.quality),
               backgroundColor: colors,
               borderRadius: 4,
             }],
@@ -402,7 +406,7 @@ async function renderChart(type) {
           },
         });
 
-        renderMoonIconsRow(data);
+        renderMoonIconsRow(filled);
         renderMoonSection(data);
       }
 
@@ -972,6 +976,25 @@ function buildIngredientNightMap(intakesData) {
     }
   }
   return nightMap;
+}
+
+// Insère des entrées vides (quality: null) pour chaque jour manquant entre
+// deux nuits enregistrées → le graphique affiche des espaces vides pour les
+// jours non renseignés (ex. absence prolongée) au lieu de coller les barres.
+function fillSleepGaps(data) {
+  if (data.length < 2) return data;
+  const result = [];
+  for (let i = 0; i < data.length; i++) {
+    if (i > 0) {
+      let d = addDays(data[i - 1].date, 1);
+      while (d < data[i].date) {
+        result.push({ date: d, quality: null, _placeholder: true });
+        d = addDays(d, 1);
+      }
+    }
+    result.push(data[i]);
+  }
+  return result;
 }
 
 function filterSleepByPeriod(data, period) {
