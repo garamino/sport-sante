@@ -2,8 +2,9 @@ import { onAuth, logout, getCurrentUser } from './auth.js';
 import { registerRoute, initRouter, navigateTo } from './router.js';
 import { updateHeader } from './components/nav.js';
 import { getUserProfile, saveApiKey, getCoachWindow, saveCoachWindow, getStravaCredentials, saveStravaCredentials, getStravaTokens, clearStravaTokens } from './db.js';
-import { showToast } from './utils.js';
+import { showToast, today, addDays } from './utils.js';
 import { buildStravaAuthUrl, exchangeStravaCode } from './strava.js';
+import { buildMarkdownExport } from './export.js';
 
 // Import views
 import * as loginView from './views/login.js';
@@ -95,6 +96,8 @@ settingsBtn.addEventListener('click', async () => {
   const hasKey = profile?.hasApiKey || false;
   const stravaConfigured = !!(stravaCreds?.clientId && stravaCreds?.clientSecret);
   const stravaConnected = !!(stravaTokens?.accessToken);
+  const exportTo = today();
+  const exportFrom = addDays(exportTo, -13);
 
   const overlay = document.createElement('div');
   overlay.className = 'settings-modal-overlay';
@@ -173,6 +176,31 @@ settingsBtn.addEventListener('click', async () => {
             Configurer Strava
           </button>
         `}
+      </div>
+
+      <div class="settings-section">
+        <div class="settings-label">Export pour analyse IA</div>
+        <p style="font-size:12px;color:var(--text-secondary);margin:4px 0 10px">
+          Génère un résumé Markdown (entraînements, nutrition, hydratation, sommeil) sur une période, à coller dans une IA pour obtenir des conseils.
+        </p>
+        <div style="display:flex;gap:8px">
+          <div style="flex:1">
+            <label style="font-size:11px;color:var(--text-secondary)">Du</label>
+            <input type="date" id="settings-export-from" value="${exportFrom}" max="${exportTo}" style="width:100%">
+          </div>
+          <div style="flex:1">
+            <label style="font-size:11px;color:var(--text-secondary)">Au</label>
+            <input type="date" id="settings-export-to" value="${exportTo}" max="${exportTo}" style="width:100%">
+          </div>
+        </div>
+        <div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap">
+          <button class="btn btn-small settings-export-preset" data-days="7" style="flex:1;background:rgba(79,195,247,.12);border:1px solid var(--accent);color:var(--accent)">7 j</button>
+          <button class="btn btn-small settings-export-preset" data-days="14" style="flex:1;background:rgba(79,195,247,.12);border:1px solid var(--accent);color:var(--accent)">14 j</button>
+          <button class="btn btn-small settings-export-preset" data-days="30" style="flex:1;background:rgba(79,195,247,.12);border:1px solid var(--accent);color:var(--accent)">30 j</button>
+        </div>
+        <button class="btn btn-primary btn-small" id="settings-export-copy" style="margin-top:8px;width:100%">
+          Copier l'export
+        </button>
       </div>
 
     </div>
@@ -254,7 +282,54 @@ settingsBtn.addEventListener('click', async () => {
   document.getElementById('settings-strava-show-creds')?.addEventListener('click', () => {
     document.getElementById('strava-creds-form')?.classList.toggle('hidden');
   });
+
+  // Export — raccourcis de période
+  overlay.querySelectorAll('.settings-export-preset').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const days = parseInt(btn.dataset.days, 10);
+      const toStr = today();
+      document.getElementById('settings-export-to').value = toStr;
+      document.getElementById('settings-export-from').value = addDays(toStr, -(days - 1));
+    });
+  });
+
+  // Export — générer et copier
+  document.getElementById('settings-export-copy')?.addEventListener('click', async (e) => {
+    const btn = e.target;
+    const from = document.getElementById('settings-export-from').value;
+    const to   = document.getElementById('settings-export-to').value;
+    if (!from || !to) { showToast('Choisis une période'); return; }
+    if (from > to)    { showToast('La date de début est après la fin'); return; }
+    btn.disabled = true;
+    btn.textContent = 'Génération...';
+    try {
+      const md = await buildMarkdownExport(from, to);
+      await copyToClipboard(md);
+      showToast('Export copié ✓ — colle-le dans ton IA');
+      close();
+    } catch (err) {
+      console.error(err);
+      showToast('Erreur lors de l\'export');
+      btn.disabled = false;
+      btn.textContent = 'Copier l\'export';
+    }
+  });
 });
+
+// Copie presse-papier avec fallback pour anciens navigateurs / contexte non sécurisé
+async function copyToClipboard(text) {
+  if (navigator.clipboard?.writeText) {
+    try { await navigator.clipboard.writeText(text); return; } catch { /* fallback */ }
+  }
+  const ta = document.createElement('textarea');
+  ta.value = text;
+  ta.style.position = 'fixed';
+  ta.style.opacity = '0';
+  document.body.appendChild(ta);
+  ta.focus();
+  ta.select();
+  try { document.execCommand('copy'); } finally { ta.remove(); }
+}
 
 // Offline detection
 window.addEventListener('online', () => {

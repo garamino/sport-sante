@@ -326,6 +326,12 @@ export async function saveHydration(date, data) {
   await setDoc(userDoc(`hydration/${date}`), { ...data, date, savedAt: Timestamp.now() });
 }
 
+export async function getAllHydration() {
+  const q = query(userCollection('hydration'), orderBy('date', 'asc'));
+  const snap = await getDocs(q);
+  return snap.docs.map(d => d.data());
+}
+
 export async function getHydrationGoal() {
   const snap = await getDoc(userDoc('settings/hydrationGoal'));
   return snap.exists() ? snap.data().ml : 2000;
