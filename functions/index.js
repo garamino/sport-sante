@@ -702,23 +702,50 @@ exports.processHealthDoc = onCall(
       const visionModel = genAI.getGenerativeModel({
         model: "gemini-2.5-flash",
         systemInstruction: `Tu es un assistant médical qui extrait les données clés de documents de santé.
-Extrais les informations de manière structurée et concise.
-Pour une prise de sang : liste chaque biomarqueur avec sa valeur, son unité et si c'est normal/bas/élevé.
-Pour un bilan médical : résume les observations et recommandations.
-Réponds en français. Sois factuel, pas de conseil médical.`,
+Réponds UNIQUEMENT avec un objet JSON valide (pas de texte hors JSON, pas de bloc markdown) de la forme :
+{
+  "summary": "<résumé texte structuré et lisible en français>",
+  "biomarkers": [
+    { "label": "<nom du paramètre>", "value": <nombre>, "unit": "<unité>" }
+  ]
+}
+Règles pour "biomarkers" :
+- Une entrée par valeur chiffrée mesurée (prise de sang / bilan biologique).
+- "value" doit être un nombre pur (pas d'unité, point décimal). Ignore les valeurs non numériques.
+- "unit" = unité telle qu'écrite sur le document (ex: "g/dL", "mg/dL", "%", "UI/L").
+- Utilise des libellés français clairs et standards (ex: "Hémoglobine", "LDL-cholestérol", "Créatinine", "AST", "Vitamine D (25OH)").
+- Si le document n'est pas une analyse biologique (ex: imagerie), renvoie "biomarkers": [].
+Pour "summary" : résume les observations. Sois factuel, aucun conseil médical.`,
       });
       const response = await visionModel.generateContent({
         contents: [{
           role: "user",
           parts: [
             { inlineData: { mimeType: mediaType, data: base64Data } },
-            { text: `Extrais les données de ce document (${typeLabels[type] || "document médical"}, date: ${date}). Résume de manière structurée.` },
+            { text: `Extrais les données de ce document (${typeLabels[type] || "document médical"}, date: ${date}).` },
           ],
         }],
-        generationConfig: { maxOutputTokens: 2048 },
+        generationConfig: { maxOutputTokens: 2048, responseMimeType: "application/json" },
       });
 
-      const summary = response.response.text();
+      const rawText = response.response.text();
+      let summary = rawText;
+      let biomarkers = [];
+      try {
+        const parsed = JSON.parse(rawText);
+        summary = typeof parsed.summary === "string" ? parsed.summary : rawText;
+        if (Array.isArray(parsed.biomarkers)) {
+          biomarkers = parsed.biomarkers
+            .filter((b) => b && b.label != null && b.value != null && !isNaN(Number(b.value)))
+            .map((b) => ({
+              label: String(b.label).trim(),
+              value: Number(b.value),
+              unit: b.unit != null ? String(b.unit).trim() : "",
+            }));
+        }
+      } catch (_parseErr) {
+        // Réponse non-JSON : on garde le texte brut comme résumé, sans biomarqueurs.
+      }
 
       // Count API usage
       const today = new Date().toISOString().split("T")[0];
@@ -728,7 +755,7 @@ Réponds en français. Sois factuel, pas de conseil médical.`,
       const currentCount = usage.date === today ? (usage.count || 0) : 0;
       await usageRef.set({ date: today, count: currentCount + 1 });
 
-      return { summary };
+      return { summary, biomarkers };
     } catch (err) {
       if (err.status === 400 || err.status === 401 || err.message?.includes("API_KEY_INVALID")) {
         return { error: "invalid_api_key", message: "Clé API invalide." };

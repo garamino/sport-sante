@@ -1,5 +1,6 @@
-import { getAllWeeklies, getAllSleep, getAllWorkouts, getAllIntakes, getAllNutrition, getNutritionGoals } from '../db.js';
+import { getAllWeeklies, getAllSleep, getAllWorkouts, getAllIntakes, getAllNutrition, getNutritionGoals, getAllHealthDocs } from '../db.js';
 import { NIGHT_CUTOFF, addDays } from '../utils.js';
+import { normalizeBiomarkerKey, getReference, classifyValue, formatRange, STATUS_COLORS, STATUS_LABELS } from '../health-reference.js';
 
 const SLEEP_PRODUCTS = [
   'Metasleep',
@@ -145,6 +146,7 @@ let currentIngredient = 'all';
 let currentNutritionPeriod = '1m';
 let currentNutritionMetric = 'kcal'; // 'kcal' | 'prot' | 'carbs' | 'fats'
 let nutChartInstance = null;
+let currentHealthKey = null; // clé du biomarqueur sélectionné dans l'onglet Santé
 
 let chartInstance = null;
 let perfChartInstance = null;
@@ -158,6 +160,7 @@ export async function render(container) {
       <button class="chart-tab active" data-chart="sleep">Sommeil</button>
       <button class="chart-tab" data-chart="bike">Vélo</button>
       <button class="chart-tab" data-chart="nutrition">Nutrition</button>
+      <button class="chart-tab" data-chart="health">Santé</button>
     </div>
     <div id="chart-area"></div>
   `;
@@ -508,11 +511,146 @@ async function renderChart(type) {
       });
 
       renderNutritionChart(allNut, goals, chartColors, baseOptions);
+
+    } else if (type === 'health') {
+      const docs = await getAllHealthDocs().catch(() => []);
+      const series = buildHealthSeries(docs); // Map cléOuLabel -> { label, points:[{date,value,unit}] }
+
+      if (series.size === 0) {
+        area.innerHTML = `
+          <div class="empty-state">
+            <p>Pas encore de biomarqueurs</p>
+            <p style="font-size:13px;color:var(--text-secondary)">Ajoute une prise de sang dans l'onglet Santé pour suivre l'évolution.</p>
+          </div>`;
+        return;
+      }
+
+      const keys = [...series.keys()];
+      if (!currentHealthKey || !series.has(currentHealthKey)) currentHealthKey = keys[0];
+
+      area.innerHTML = `
+        <div class="form-group" style="margin-bottom:12px">
+          <select id="health-metric-select" style="width:100%">
+            ${keys.map(k => `<option value="${escapeAttr(k)}" ${k === currentHealthKey ? 'selected' : ''}>${escapeAttr(series.get(k).label)}</option>`).join('')}
+          </select>
+        </div>
+        <div id="health-stat" style="margin-bottom:12px"></div>
+        <div class="chart-container"><canvas id="health-chart"></canvas></div>
+        <div id="health-empty" class="empty-state hidden">
+          <p>Une seule mesure pour ce paramètre</p>
+          <p style="font-size:13px;color:var(--text-secondary)">Ajoute une nouvelle prise de sang pour voir l'évolution.</p>
+        </div>
+      `;
+
+      document.getElementById('health-metric-select').addEventListener('change', (e) => {
+        currentHealthKey = e.target.value;
+        renderHealthChart(series, chartColors, baseOptions);
+      });
+
+      renderHealthChart(series, chartColors, baseOptions);
     }
   } catch (e) {
     console.error('Chart error:', e);
     area.innerHTML = `<div class="empty-state"><p>Erreur de chargement</p></div>`;
   }
+}
+
+function escapeAttr(str) {
+  const div = document.createElement('div');
+  div.textContent = str == null ? '' : String(str);
+  return div.innerHTML.replace(/"/g, '&quot;');
+}
+
+// Construit les séries temporelles de biomarqueurs à partir des documents santé.
+// Clé de regroupement = clé canonique si connue, sinon le libellé normalisé.
+function buildHealthSeries(docs) {
+  const map = new Map();
+  for (const doc of docs) {
+    if (!Array.isArray(doc.biomarkers) || !doc.date) continue;
+    for (const b of doc.biomarkers) {
+      if (b == null || b.value == null || isNaN(Number(b.value))) continue;
+      const key = b.key || normalizeBiomarkerKey(b.label) || `raw:${b.label}`;
+      if (!map.has(key)) {
+        const ref = getReference(b.key || normalizeBiomarkerKey(b.label));
+        map.set(key, { label: (ref && ref.label) || b.label, canonicalKey: b.key || normalizeBiomarkerKey(b.label), points: [] });
+      }
+      map.get(key).points.push({ date: doc.date, value: Number(b.value), unit: b.unit || '' });
+    }
+  }
+  // Trie chaque série par date croissante.
+  for (const s of map.values()) s.points.sort((a, b) => a.date.localeCompare(b.date));
+  return map;
+}
+
+function renderHealthChart(series, chartColors, baseOptions) {
+  if (chartInstance) { chartInstance.destroy(); chartInstance = null; }
+  const s = series.get(currentHealthKey);
+  const canvas = document.getElementById('health-chart');
+  const emptyEl = document.getElementById('health-empty');
+  const statEl = document.getElementById('health-stat');
+  if (!s || !canvas) return;
+
+  const ref = getReference(s.canonicalKey);
+  const unit = s.points[s.points.length - 1]?.unit || '';
+
+  // Bloc valeur la plus récente + statut.
+  const last = s.points[s.points.length - 1];
+  const status = classifyValue(last.value, ref);
+  statEl.innerHTML = `
+    <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap">
+      <span style="font-size:24px;font-weight:700;color:${STATUS_COLORS[status]}">${last.value} ${escapeAttr(unit)}</span>
+      <span style="font-size:13px;color:var(--text-secondary)">dernière mesure — ${STATUS_LABELS[status]}${ref ? ` · norme ${formatRange(ref)} ${escapeAttr(ref.unit)}` : ''}</span>
+    </div>`;
+
+  if (s.points.length < 2) {
+    canvas.parentElement.classList.add('hidden');
+    emptyEl.classList.remove('hidden');
+    return;
+  }
+  canvas.parentElement.classList.remove('hidden');
+  emptyEl.classList.add('hidden');
+
+  const labels = s.points.map(p => new Date(p.date + 'T00:00:00').toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', year: '2-digit' }));
+  const values = s.points.map(p => p.value);
+  const pointColors = s.points.map(p => STATUS_COLORS[classifyValue(p.value, ref)]);
+
+  const datasets = [{
+    label: s.label,
+    data: values,
+    borderColor: chartColors.accent,
+    backgroundColor: chartColors.accent + '22',
+    fill: false,
+    tension: 0.3,
+    pointRadius: 5,
+    pointBackgroundColor: pointColors,
+    pointBorderColor: pointColors,
+  }];
+
+  // Bornes de référence en lignes pointillées (si définies).
+  if (ref && ref.max != null) {
+    datasets.push({ label: 'Max norme', data: values.map(() => ref.max), borderColor: chartColors.danger, borderWidth: 1, borderDash: [5, 5], pointRadius: 0, fill: false, tension: 0 });
+  }
+  if (ref && ref.min != null) {
+    datasets.push({ label: 'Min norme', data: values.map(() => ref.min), borderColor: chartColors.warning, borderWidth: 1, borderDash: [5, 5], pointRadius: 0, fill: false, tension: 0 });
+  }
+
+  chartInstance = new Chart(canvas.getContext('2d'), {
+    type: 'line',
+    data: { labels, datasets },
+    options: {
+      ...baseOptions,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            label: (item) => item.datasetIndex === 0
+              ? `${item.formattedValue} ${unit}`
+              : `${item.dataset.label}: ${item.formattedValue}`,
+          },
+        },
+      },
+    },
+  });
 }
 
 let currentPeriod = '3m';

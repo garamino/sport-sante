@@ -1,5 +1,6 @@
 import { today, formatDateFR, showToast } from '../utils.js';
 import { uploadHealthFile, deleteHealthFile, saveHealthDoc, updateHealthDoc, deleteHealthDoc, getAllHealthDocs } from '../db.js';
+import { normalizeBiomarkerKey, getReference, classifyValue, formatRange, STATUS_COLORS } from '../health-reference.js';
 import { getFunctions, httpsCallable } from 'https://www.gstatic.com/firebasejs/11.6.0/firebase-functions.js';
 import { app } from '../auth.js';
 
@@ -78,7 +79,8 @@ export async function render(container) {
           <label>Contenu (resultats, observations...)</label>
           <textarea id="health-text-content" rows="6" placeholder="Ex: Hemoglobine 14.2 g/dL, Ferritine 45 ng/mL, Glycemie 0.92 g/L..."></textarea>
         </div>
-        <button class="btn btn-success" id="health-text-btn">Enregistrer</button>
+        ${biomarkerEditorHtml('bm-text')}
+        <button class="btn btn-success" id="health-text-btn" style="margin-top:12px">Enregistrer</button>
       </div>
     </div>
 
@@ -90,7 +92,8 @@ export async function render(container) {
         <label>Corriger si besoin avant de sauvegarder</label>
         <textarea id="health-result-edit" rows="6"></textarea>
       </div>
-      <button class="btn btn-success" id="health-result-save">Valider et sauvegarder</button>
+      ${biomarkerEditorHtml('bm-result')}
+      <button class="btn btn-success" id="health-result-save" style="margin-top:12px">Valider et sauvegarder</button>
     </div>
 
     <!-- History -->
@@ -107,6 +110,7 @@ export async function render(container) {
               <svg class="health-doc-chevron" data-id="${d.id}" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--text-secondary)" stroke-width="2" style="flex-shrink:0;transition:transform .2s"><polyline points="6 9 12 15 18 9"/></svg>
             </div>
             <div class="health-doc-detail hidden" id="health-detail-${d.id}" style="margin-top:10px">
+              ${biomarkersTableHtml(d.biomarkers)}
               <div class="health-doc-view" id="health-view-${d.id}" style="font-size:13px;line-height:1.6;white-space:pre-wrap;background:var(--bg-primary);padding:10px;border-radius:8px">${escapeHtml(d.summary || d.content || '')}</div>
               <textarea class="health-doc-edit hidden" id="health-edit-${d.id}" rows="8" style="width:100%;margin-top:8px;font-size:13px">${escapeHtml(d.summary || d.content || '')}</textarea>
               <div style="display:flex;gap:8px;margin-top:8px">
@@ -123,6 +127,10 @@ export async function render(container) {
       </div>
     ` : ''}
   `;
+
+  // --- Biomarker editors (empty for text tab, filled after extraction for result) ---
+  fillBiomarkerEditor('bm-text', []);
+  fillBiomarkerEditor('bm-result', []);
 
   // --- Tab switching ---
   container.querySelectorAll('.health-tab').forEach(tab => {
@@ -198,6 +206,7 @@ export async function render(container) {
 
       document.getElementById('health-result-text').textContent = extracted;
       document.getElementById('health-result-edit').value = extracted;
+      fillBiomarkerEditor('bm-result', Array.isArray(result.data.biomarkers) ? result.data.biomarkers : []);
       document.getElementById('health-result-card').classList.remove('hidden');
       btn.textContent = 'Analyser le document';
       btn.disabled = false;
@@ -216,6 +225,7 @@ export async function render(container) {
 
     const editedSummary = document.getElementById('health-result-edit').value.trim();
     pendingExtraction.summary = editedSummary || pendingExtraction.summary;
+    pendingExtraction.biomarkers = readBiomarkerEditor('bm-result');
 
     try {
       await saveHealthDoc(pendingExtraction);
@@ -233,7 +243,8 @@ export async function render(container) {
   // --- Save text entry ---
   document.getElementById('health-text-btn').addEventListener('click', async () => {
     const content = document.getElementById('health-text-content').value.trim();
-    if (!content) { showToast('Entre du contenu'); return; }
+    const biomarkers = readBiomarkerEditor('bm-text');
+    if (!content && biomarkers.length === 0) { showToast('Entre du contenu ou des biomarqueurs'); return; }
 
     const btn = document.getElementById('health-text-btn');
     btn.disabled = true;
@@ -245,6 +256,7 @@ export async function render(container) {
         type: document.getElementById('health-text-type').value,
         content,
         summary: content,
+        biomarkers,
         source: 'text',
       });
       showToast('Document enregistre');
@@ -348,4 +360,70 @@ function escapeHtml(str) {
   const div = document.createElement('div');
   div.textContent = str;
   return div.innerHTML;
+}
+
+// === Éditeur de biomarqueurs (lignes label / valeur / unité) ===
+
+function biomarkerEditorHtml(rootId) {
+  return `
+    <div class="section-title" style="font-size:14px;margin:16px 0 4px">Biomarqueurs</div>
+    <div style="font-size:12px;color:var(--text-secondary);margin-bottom:8px">Valeurs chiffrées pour le suivi graphique (onglet Stats → Santé).</div>
+    <div id="${rootId}-rows"></div>
+    <button type="button" class="btn btn-small" id="${rootId}-add" style="margin-top:8px">+ Ajouter un paramètre</button>
+  `;
+}
+
+function biomarkerRowHtml(b = {}) {
+  return `<div class="bm-row" style="display:flex;gap:6px;align-items:center;margin-top:6px">
+    <input class="bm-label" placeholder="Paramètre" value="${escapeHtml(b.label || '')}" style="flex:2;min-width:0">
+    <input class="bm-value" type="number" step="any" inputmode="decimal" placeholder="Valeur" value="${b.value ?? ''}" style="flex:1;min-width:0">
+    <input class="bm-unit" placeholder="Unité" value="${escapeHtml(b.unit || '')}" style="flex:1;min-width:0">
+    <button type="button" class="btn btn-small bm-remove" title="Retirer" style="color:var(--danger);background:none;padding:4px 8px">✕</button>
+  </div>`;
+}
+
+function fillBiomarkerEditor(rootId, list) {
+  const rowsEl = document.getElementById(`${rootId}-rows`);
+  const addBtn = document.getElementById(`${rootId}-add`);
+  if (!rowsEl || !addBtn) return;
+  rowsEl.innerHTML = (Array.isArray(list) ? list : []).map(biomarkerRowHtml).join('');
+  addBtn.onclick = () => rowsEl.insertAdjacentHTML('beforeend', biomarkerRowHtml());
+  rowsEl.onclick = (e) => {
+    const rm = e.target.closest('.bm-remove');
+    if (rm) rm.closest('.bm-row').remove();
+  };
+}
+
+function readBiomarkerEditor(rootId) {
+  const rowsEl = document.getElementById(`${rootId}-rows`);
+  if (!rowsEl) return [];
+  return [...rowsEl.querySelectorAll('.bm-row')].map(row => {
+    const label = row.querySelector('.bm-label').value.trim();
+    const value = parseFloat(row.querySelector('.bm-value').value);
+    const unit = row.querySelector('.bm-unit').value.trim();
+    if (!label || isNaN(value)) return null;
+    return { key: normalizeBiomarkerKey(label), label, value, unit };
+  }).filter(Boolean);
+}
+
+// Tableau lecture seule des biomarqueurs (affiché dans l'historique).
+function biomarkersTableHtml(list) {
+  if (!Array.isArray(list) || list.length === 0) return '';
+  const rows = list.map(b => {
+    const ref = b.key ? getReference(b.key) : null;
+    const status = classifyValue(b.value, ref);
+    const color = STATUS_COLORS[status];
+    const range = ref ? formatRange(ref) : '';
+    return `<tr>
+      <td style="padding:4px 6px">${escapeHtml(b.label)}</td>
+      <td style="padding:4px 6px;text-align:right;color:${color};font-weight:600;white-space:nowrap">${b.value} ${escapeHtml(b.unit || '')}</td>
+      <td style="padding:4px 6px;text-align:right;color:var(--text-secondary);font-size:12px;white-space:nowrap">${range}</td>
+    </tr>`;
+  }).join('');
+  return `<div style="overflow-x:auto;margin-bottom:10px"><table style="width:100%;border-collapse:collapse;font-size:13px">
+    <thead><tr style="color:var(--text-secondary);font-size:11px;text-transform:uppercase">
+      <th style="text-align:left;padding:4px 6px">Paramètre</th>
+      <th style="text-align:right;padding:4px 6px">Valeur</th>
+      <th style="text-align:right;padding:4px 6px">Norme</th>
+    </tr></thead><tbody>${rows}</tbody></table></div>`;
 }
