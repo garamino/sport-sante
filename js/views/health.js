@@ -76,9 +76,10 @@ export async function render(container) {
           </select>
         </div>
         <div class="form-group">
-          <label>Contenu (resultats, observations...)</label>
-          <textarea id="health-text-content" rows="6" placeholder="Ex: Hemoglobine 14.2 g/dL, Ferritine 45 ng/mL, Glycemie 0.92 g/L..."></textarea>
+          <label>Contenu (colle ton compte-rendu, résultats, observations...)</label>
+          <textarea id="health-text-content" rows="8" placeholder="Ex: Hemoglobine 14.2 g/dL, Ferritine 45 ng/mL, Glycemie 0.92 g/L..."></textarea>
         </div>
+        <button type="button" class="btn btn-small" id="health-text-parse" style="margin-bottom:8px">✨ Structurer le texte</button>
         ${biomarkerEditorHtml('bm-text')}
         <button class="btn btn-success" id="health-text-btn" style="margin-top:12px">Enregistrer</button>
       </div>
@@ -131,6 +132,15 @@ export async function render(container) {
   // --- Biomarker editors (empty for text tab, filled after extraction for result) ---
   fillBiomarkerEditor('bm-text', []);
   fillBiomarkerEditor('bm-result', []);
+
+  // --- Structurer le texte collé en biomarqueurs ---
+  document.getElementById('health-text-parse').addEventListener('click', () => {
+    const text = document.getElementById('health-text-content').value;
+    const parsed = parseBiomarkersFromText(text);
+    if (parsed.length === 0) { showToast('Aucune valeur détectée'); return; }
+    fillBiomarkerEditor('bm-text', parsed);
+    showToast(`${parsed.length} paramètre(s) détecté(s) ✓`);
+  });
 
   // --- Tab switching ---
   container.querySelectorAll('.health-tab').forEach(tab => {
@@ -404,6 +414,31 @@ function readBiomarkerEditor(rootId) {
     if (!label || isNaN(value)) return null;
     return { key: normalizeBiomarkerKey(label), label, value, unit };
   }).filter(Boolean);
+}
+
+// Extrait des biomarqueurs { key, label, value, unit } depuis un texte collé.
+// Gère les lignes markdown type "- **Hémoglobine :** 15.6 g/dL (normal, norme 13-18)".
+function parseBiomarkersFromText(text) {
+  const out = [];
+  const seen = new Set();
+  for (const raw of (text || '').split('\n')) {
+    const line = raw.replace(/\*\*/g, '').replace(/^[\s\-*•]+/, '').trim();
+    const m = line.match(/^(.+?)\s*:\s*(-?\d+(?:[.,]\d+)?)\s*([^\s(]*)/);
+    if (!m) continue;
+    const label = m[1].trim();
+    const value = parseFloat(m[2].replace(',', '.'));
+    const unit = m[3].trim().replace(/[.,;]+$/, '');
+    if (!label || isNaN(value)) continue;
+    // Ignorer les lignes méta (date de prélèvement, labo, patient…)
+    if (/date|labo|pr[ée]l[èe]|patient|\bnom\b|na[iî]ss/i.test(label)) continue;
+    if (unit.startsWith('/')) continue; // motif de date type 27/03/2026
+    const key = normalizeBiomarkerKey(label);
+    const dedup = key || label.toLowerCase();
+    if (seen.has(dedup)) continue;
+    seen.add(dedup);
+    out.push({ key, label, value, unit });
+  }
+  return out;
 }
 
 // Tableau lecture seule des biomarqueurs (affiché dans l'historique).
