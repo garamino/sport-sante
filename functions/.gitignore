@@ -1,0 +1,6 @@
+# Dépendances installées par npm — régénérables via `npm install`
+node_modules/
+
+# Logs Firebase
+*.log
+.firebase/
