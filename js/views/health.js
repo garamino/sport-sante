@@ -112,6 +112,7 @@ export async function render(container) {
             </div>
             <div class="health-doc-detail hidden" id="health-detail-${d.id}" style="margin-top:10px">
               ${biomarkersTableHtml(d.biomarkers)}
+              <input type="date" class="health-doc-editdate hidden" id="health-editdate-${d.id}" value="${d.date}" style="width:100%;margin-bottom:8px">
               <div class="health-doc-view" id="health-view-${d.id}" style="font-size:13px;line-height:1.6;white-space:pre-wrap;background:var(--bg-primary);padding:10px;border-radius:8px">${escapeHtml(d.summary || d.content || '')}</div>
               <textarea class="health-doc-edit hidden" id="health-edit-${d.id}" rows="8" style="width:100%;margin-top:8px;font-size:13px">${escapeHtml(d.summary || d.content || '')}</textarea>
               <div style="display:flex;gap:8px;margin-top:8px">
@@ -296,6 +297,7 @@ export async function render(container) {
       const id = btn.dataset.id;
       document.getElementById(`health-view-${id}`).classList.add('hidden');
       document.getElementById(`health-edit-${id}`).classList.remove('hidden');
+      document.getElementById(`health-editdate-${id}`).classList.remove('hidden');
       btn.classList.add('hidden');
       container.querySelector(`.health-save-btn[data-id="${id}"]`).classList.remove('hidden');
       container.querySelector(`.health-cancel-btn[data-id="${id}"]`).classList.remove('hidden');
@@ -308,6 +310,7 @@ export async function render(container) {
       const id = btn.dataset.id;
       document.getElementById(`health-view-${id}`).classList.remove('hidden');
       document.getElementById(`health-edit-${id}`).classList.add('hidden');
+      document.getElementById(`health-editdate-${id}`).classList.add('hidden');
       container.querySelector(`.health-edit-btn[data-id="${id}"]`).classList.remove('hidden');
       btn.classList.add('hidden');
       container.querySelector(`.health-save-btn[data-id="${id}"]`).classList.add('hidden');
@@ -322,11 +325,13 @@ export async function render(container) {
     btn.addEventListener('click', async () => {
       const id = btn.dataset.id;
       const newText = document.getElementById(`health-edit-${id}`).value.trim();
+      const newDate = document.getElementById(`health-editdate-${id}`).value;
       if (!newText) { showToast('Le contenu ne peut pas être vide'); return; }
+      if (!newDate) { showToast('La date ne peut pas être vide'); return; }
       btn.disabled = true;
       btn.textContent = 'Enregistrement...';
       try {
-        await updateHealthDoc(id, { summary: newText, content: newText });
+        await updateHealthDoc(id, { summary: newText, content: newText, date: newDate });
         showToast('Document mis à jour');
         render(container);
       } catch {
