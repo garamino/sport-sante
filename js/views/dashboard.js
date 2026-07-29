@@ -392,6 +392,10 @@ export async function render(container) {
           <div class="quick-action-icon" style="background:#0288d1">💧</div>
           <span>Ajouter eau</span>
         </a>
+        <a href="#/health" class="quick-action">
+          <div class="quick-action-icon" style="background:var(--danger)">🩸</div>
+          <span>Santé & bilans</span>
+        </a>
       </div>
 
       <div style="display:flex;align-items:center;justify-content:space-between;margin-top:24px">
