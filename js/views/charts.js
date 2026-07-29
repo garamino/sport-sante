@@ -528,23 +528,24 @@ async function renderChart(type) {
       const keys = [...series.keys()];
       if (!currentHealthKey || !series.has(currentHealthKey)) currentHealthKey = keys[0];
 
+      // Toutes les dates distinctes (colonnes de la grille), ordre croissant.
+      const dates = [...new Set([].concat(...[...series.values()].map(s => s.points.map(p => p.date))))].sort();
+
       area.innerHTML = `
-        <div class="form-group" style="margin-bottom:12px">
-          <select id="health-metric-select" style="width:100%">
-            ${keys.map(k => `<option value="${escapeAttr(k)}" ${k === currentHealthKey ? 'selected' : ''}>${escapeAttr(series.get(k).label)}</option>`).join('')}
-          </select>
+        ${HEALTH_GRID_STYLE}
+        <div style="font-size:12px;color:var(--text-secondary);margin-bottom:8px">Touche une ligne pour voir la courbe d'évolution.</div>
+        <div style="overflow-x:auto;-webkit-overflow-scrolling:touch;border-radius:8px">
+          ${buildHealthGrid(series, dates)}
         </div>
-        <div id="health-stat" style="margin-bottom:12px"></div>
-        <div class="chart-container"><canvas id="health-chart"></canvas></div>
-        <div id="health-empty" class="empty-state hidden">
-          <p>Une seule mesure pour ce paramètre</p>
-          <p style="font-size:13px;color:var(--text-secondary)">Ajoute une nouvelle prise de sang pour voir l'évolution.</p>
-        </div>
+        <div id="health-chart-area" style="margin-top:20px"></div>
       `;
 
-      document.getElementById('health-metric-select').addEventListener('change', (e) => {
-        currentHealthKey = e.target.value;
-        renderHealthChart(series, chartColors, baseOptions);
+      area.querySelectorAll('.health-grid-row').forEach(row => {
+        row.addEventListener('click', () => {
+          currentHealthKey = row.dataset.key;
+          area.querySelectorAll('.health-grid-row').forEach(r => r.classList.toggle('selected', r === row));
+          renderHealthChart(series, chartColors, baseOptions);
+        });
       });
 
       renderHealthChart(series, chartColors, baseOptions);
@@ -582,33 +583,88 @@ function buildHealthSeries(docs) {
   return map;
 }
 
+// Ordre d'affichage des catégories dans la grille récap.
+const HEALTH_CATEGORY_ORDER = [
+  'Hématologie', 'Formule leucocytaire', 'Fonction rénale', 'Fonction hépatique',
+  'Profil lipidique', 'Glycémie', 'Vitamines & minéraux', 'Hormones', 'Inflammation', 'Autres',
+];
+
+const HEALTH_GRID_STYLE = `<style>
+  .health-grid { border-collapse: collapse; font-size: 13px; white-space: nowrap; min-width: 100%; }
+  .health-grid th, .health-grid td { padding: 7px 10px; text-align: right; border-bottom: 1px solid var(--border); }
+  .health-grid thead th { color: var(--text-secondary); font-size: 11px; font-weight: 600; background: var(--bg-primary); }
+  .health-grid .hg-name { position: sticky; left: 0; text-align: left; background: var(--bg-primary); z-index: 1; font-weight: 500; }
+  .health-grid tr.hg-cat td { background: var(--bg-secondary); color: var(--text-secondary); font-size: 10px; text-transform: uppercase; font-weight: 700; letter-spacing: .04em; }
+  .health-grid tr.hg-cat .hg-name { background: var(--bg-secondary); }
+  .health-grid tr.health-grid-row { cursor: pointer; }
+  .health-grid tr.health-grid-row:hover .hg-name { color: var(--accent); }
+  .health-grid tr.health-grid-row.selected .hg-name { color: var(--accent); font-weight: 700; box-shadow: inset 3px 0 0 var(--accent); }
+</style>`;
+
+// Construit la grille récap : lignes = biomarqueurs (groupés par catégorie), colonnes = dates.
+function buildHealthGrid(series, dates) {
+  const fmt = (d) => new Date(d + 'T00:00:00').toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: '2-digit' });
+
+  // Regroupe les séries par catégorie de référence.
+  const groups = new Map();
+  for (const [key, s] of series) {
+    const ref = getReference(s.canonicalKey);
+    const cat = (ref && ref.category) || 'Autres';
+    if (!groups.has(cat)) groups.set(cat, []);
+    groups.get(cat).push({ key, s, ref });
+  }
+  const orderedCats = [...groups.keys()].sort((a, b) => {
+    const ia = HEALTH_CATEGORY_ORDER.indexOf(a); const ib = HEALTH_CATEGORY_ORDER.indexOf(b);
+    return (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib);
+  });
+
+  const nCols = dates.length;
+  let html = `<table class="health-grid"><thead><tr><th class="hg-name">Paramètre</th>${dates.map(d => `<th>${fmt(d)}</th>`).join('')}</tr></thead><tbody>`;
+
+  for (const cat of orderedCats) {
+    html += `<tr class="hg-cat"><td class="hg-name">${escapeAttr(cat)}</td>${'<td></td>'.repeat(nCols)}</tr>`;
+    const rows = groups.get(cat).sort((a, b) => a.s.label.localeCompare(b.s.label));
+    for (const { key, s, ref } of rows) {
+      const byDate = new Map(s.points.map(p => [p.date, p]));
+      const cells = dates.map(d => {
+        const p = byDate.get(d);
+        if (!p) return '<td></td>';
+        const st = classifyValue(p.value, ref);
+        const color = STATUS_COLORS[st];
+        const bg = (st === 'high' || st === 'low') ? color + '22' : 'transparent';
+        return `<td style="color:${color};background:${bg};font-weight:600">${p.value}</td>`;
+      }).join('');
+      html += `<tr class="health-grid-row ${key === currentHealthKey ? 'selected' : ''}" data-key="${escapeAttr(key)}"><td class="hg-name">${escapeAttr(s.label)}</td>${cells}</tr>`;
+    }
+  }
+  html += `</tbody></table>`;
+  return html;
+}
+
 function renderHealthChart(series, chartColors, baseOptions) {
   if (chartInstance) { chartInstance.destroy(); chartInstance = null; }
+  const area = document.getElementById('health-chart-area');
   const s = series.get(currentHealthKey);
-  const canvas = document.getElementById('health-chart');
-  const emptyEl = document.getElementById('health-empty');
-  const statEl = document.getElementById('health-stat');
-  if (!s || !canvas) return;
+  if (!area || !s) return;
 
   const ref = getReference(s.canonicalKey);
   const unit = s.points[s.points.length - 1]?.unit || '';
-
-  // Bloc valeur la plus récente + statut.
   const last = s.points[s.points.length - 1];
   const status = classifyValue(last.value, ref);
-  statEl.innerHTML = `
-    <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap">
+
+  area.innerHTML = `
+    <div style="font-size:15px;font-weight:600;margin-bottom:4px">${escapeAttr(s.label)}</div>
+    <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:12px">
       <span style="font-size:24px;font-weight:700;color:${STATUS_COLORS[status]}">${last.value} ${escapeAttr(unit)}</span>
       <span style="font-size:13px;color:var(--text-secondary)">dernière mesure — ${STATUS_LABELS[status]}${ref ? ` · norme ${formatRange(ref)} ${escapeAttr(ref.unit)}` : ''}</span>
-    </div>`;
+    </div>
+    ${s.points.length < 2
+      ? `<div class="empty-state"><p>Une seule mesure pour ce paramètre</p><p style="font-size:13px;color:var(--text-secondary)">Ajoute une nouvelle prise de sang pour voir l'évolution.</p></div>`
+      : `<div class="chart-container"><canvas id="health-chart"></canvas></div>`}
+  `;
 
-  if (s.points.length < 2) {
-    canvas.parentElement.classList.add('hidden');
-    emptyEl.classList.remove('hidden');
-    return;
-  }
-  canvas.parentElement.classList.remove('hidden');
-  emptyEl.classList.add('hidden');
+  if (s.points.length < 2) return;
+  const canvas = document.getElementById('health-chart');
 
   const labels = s.points.map(p => new Date(p.date + 'T00:00:00').toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', year: '2-digit' }));
   const values = s.points.map(p => p.value);
