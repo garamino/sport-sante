@@ -4,6 +4,8 @@ import { showToast } from './utils.js';
 
 let bar = null;
 let hashHandler = null;
+let visibilityHandler = null;
+let wakeLock = null;
 let audioCtx = null;
 
 // Chrono de séance
@@ -39,21 +41,50 @@ export function startSessionTimer() {
   updateSwUI();
   updateToggleUI();
 
+  // Garder l'écran allumé pendant la séance
+  requestWakeLock();
+
   // Nettoyage automatique quand on quitte la vue Séance
   hashHandler = () => {
     if (!location.hash.startsWith('#/workout')) stopSessionTimer();
   };
   window.addEventListener('hashchange', hashHandler);
+
+  // Ré-acquérir le verrou d'écran au retour au premier plan (le système le relâche en arrière-plan)
+  visibilityHandler = () => {
+    if (bar && document.visibilityState === 'visible') requestWakeLock();
+  };
+  document.addEventListener('visibilitychange', visibilityHandler);
 }
 
 export function stopSessionTimer() {
   stopTick();
   stopRest();
   if (hashHandler) { window.removeEventListener('hashchange', hashHandler); hashHandler = null; }
+  if (visibilityHandler) { document.removeEventListener('visibilitychange', visibilityHandler); visibilityHandler = null; }
+  releaseWakeLock();
   document.body.classList.remove('timer-on');
   bar?.remove();
   bar = null;
   sw = { accMs: 0, startTs: 0, running: false };
+}
+
+// ── Verrou d'écran (Screen Wake Lock API) ───────────────────────────────────────
+async function requestWakeLock() {
+  if (wakeLock) return; // déjà actif
+  try {
+    if (!('wakeLock' in navigator)) return; // non supporté (ex. iOS < 16.4)
+    wakeLock = await navigator.wakeLock.request('screen');
+    wakeLock.addEventListener('release', () => { wakeLock = null; });
+  } catch {
+    wakeLock = null; // refusé (onglet masqué, batterie faible, etc.)
+  }
+}
+
+async function releaseWakeLock() {
+  if (!wakeLock) return;
+  try { await wakeLock.release(); } catch {}
+  wakeLock = null;
 }
 
 // ── Construction de la barre ────────────────────────────────────────────────────

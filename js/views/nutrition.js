@@ -299,7 +299,13 @@ function openEditEntryModal(sectionKey, item) {
             <option value="portion" ${item.unit === 'portion'  ? 'selected' : ''}>portion(s)</option>
           </select>
         </div>
-        <div id="nee-macros" style="font-size:12px;color:var(--text-secondary);padding:8px;background:var(--bg-secondary);border-radius:8px;text-align:center"></div>
+        <div style="font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--text-secondary)">Valeurs pour la quantité saisie</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+          <input id="nee-kcal"  type="number" value="${item.kcal}"  min="0" step="1"   placeholder="Calories (kcal)" />
+          <input id="nee-prot"  type="number" value="${item.prot}"  min="0" step="0.1" placeholder="Protéines (g)" />
+          <input id="nee-carbs" type="number" value="${item.carbs}" min="0" step="0.1" placeholder="Glucides (g)" />
+          <input id="nee-fats"  type="number" value="${item.fats}"  min="0" step="0.1" placeholder="Lipides (g)" />
+        </div>
         <div>
           <label style="font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--text-secondary);display:block;margin-bottom:5px">Déplacer vers</label>
           <select id="nee-section">
@@ -312,16 +318,25 @@ function openEditEntryModal(sectionKey, item) {
 
   document.body.appendChild(modal);
 
-  const qtyInput  = modal.querySelector('#nee-qty');
-  const macrosEl  = modal.querySelector('#nee-macros');
+  const qtyInput   = modal.querySelector('#nee-qty');
+  const kcalInput  = modal.querySelector('#nee-kcal');
+  const protInput  = modal.querySelector('#nee-prot');
+  const carbsInput = modal.querySelector('#nee-carbs');
+  const fatsInput  = modal.querySelector('#nee-fats');
 
-  function updateMacros() {
+  // Rescale les macros affichées quand la quantité change, en conservant
+  // d'éventuelles corrections manuelles (ratio depuis la quantité précédente).
+  let prevQty = item.qty;
+  qtyInput.addEventListener('input', () => {
     const newQty = Math.max(1, parseFloat(qtyInput.value) || 1);
-    const ratio  = newQty / item.qty;
-    macrosEl.textContent = `${Math.round(item.kcal * ratio)} kcal · P:${round1(item.prot * ratio)}g · G:${round1(item.carbs * ratio)}g · L:${round1(item.fats * ratio)}g`;
-  }
-  updateMacros();
-  qtyInput.addEventListener('input', updateMacros);
+    if (!prevQty || newQty === prevQty) { prevQty = newQty; return; }
+    const ratio = newQty / prevQty;
+    kcalInput.value  = Math.round((parseFloat(kcalInput.value)  || 0) * ratio);
+    protInput.value  = round1((parseFloat(protInput.value)  || 0) * ratio);
+    carbsInput.value = round1((parseFloat(carbsInput.value) || 0) * ratio);
+    fatsInput.value  = round1((parseFloat(fatsInput.value)  || 0) * ratio);
+    prevQty = newQty;
+  });
 
   const close = () => modal.remove();
   modal.querySelector('#nee-close').addEventListener('click', close);
@@ -335,13 +350,12 @@ function openEditEntryModal(sectionKey, item) {
     const targetSection = modal.querySelector('#nee-section').value;
     if (!name) { showToast('Le nom est obligatoire'); return; }
 
-    const ratio = qty / item.qty;
     const updated = {
       ...item, name, brand, qty, unit,
-      kcal:  Math.round(item.kcal  * ratio),
-      prot:  round1(item.prot  * ratio),
-      carbs: round1(item.carbs * ratio),
-      fats:  round1(item.fats  * ratio),
+      kcal:  Math.round(parseFloat(kcalInput.value)  || 0),
+      prot:  round1(parseFloat(protInput.value)  || 0),
+      carbs: round1(parseFloat(carbsInput.value) || 0),
+      fats:  round1(parseFloat(fatsInput.value)  || 0),
     };
 
     _data.sections[sectionKey] = _data.sections[sectionKey].filter(i => i.id !== item.id);
@@ -1494,11 +1508,14 @@ Maximum 8 aliments. Valeurs réalistes.`,
         </div>
       </div>
 
-      <div style="background:var(--bg-secondary);border-radius:var(--radius-sm);padding:10px 12px;margin-bottom:14px;font-size:12px;color:var(--text-secondary)">
-        Pour 100g/ml : <b style="color:var(--text-primary)">${food.kcalPer100} kcal</b>
-        · P:<b style="color:var(--text-primary)">${food.protPer100}g</b>
-        · G:<b style="color:var(--text-primary)">${food.carbsPer100}g</b>
-        · L:<b style="color:var(--text-primary)">${food.fatsPer100}g</b>
+      <div style="font-size:11px;text-transform:uppercase;color:var(--text-secondary);letter-spacing:.04em;margin-bottom:6px">
+        Valeurs pour 100 g/ml — corrige si besoin
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:14px">
+        <input id="cf-kcal100"  type="number" value="${food.kcalPer100}"  min="0" step="1"   placeholder="Calories (kcal)" />
+        <input id="cf-prot100"  type="number" value="${food.protPer100}"  min="0" step="0.1" placeholder="Protéines (g)" />
+        <input id="cf-carbs100" type="number" value="${food.carbsPer100}" min="0" step="0.1" placeholder="Glucides (g)" />
+        <input id="cf-fats100"  type="number" value="${food.fatsPer100}"  min="0" step="0.1" placeholder="Lipides (g)" />
       </div>
 
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px">
@@ -1524,11 +1541,15 @@ Maximum 8 aliments. Valeurs réalistes.`,
     function updatePreview() {
       const qty   = parseFloat(modal.querySelector('#cf-qty').value) || 0;
       const unit  = modal.querySelector('#cf-unit').value;
+      const kcal100  = parseFloat(modal.querySelector('#cf-kcal100').value)  || 0;
+      const prot100  = parseFloat(modal.querySelector('#cf-prot100').value)  || 0;
+      const carbs100 = parseFloat(modal.querySelector('#cf-carbs100').value) || 0;
+      const fats100  = parseFloat(modal.querySelector('#cf-fats100').value)  || 0;
       const ratio = (['g','ml'].includes(unit)) ? qty / 100 : qty;
-      const kcal  = Math.round((food.kcalPer100  || 0) * ratio);
-      const prot  = round1((food.protPer100  || 0) * ratio);
-      const carbs = round1((food.carbsPer100 || 0) * ratio);
-      const fats  = round1((food.fatsPer100  || 0) * ratio);
+      const kcal  = Math.round(kcal100  * ratio);
+      const prot  = round1(prot100  * ratio);
+      const carbs = round1(carbs100 * ratio);
+      const fats  = round1(fats100  * ratio);
       modal.querySelector('#cf-preview').innerHTML = `
         <div style="display:flex;justify-content:space-between;font-size:13px">
           <span style="font-weight:700;color:var(--accent)">${kcal} kcal</span>
@@ -1541,6 +1562,8 @@ Maximum 8 aliments. Valeurs réalistes.`,
 
     modal.querySelector('#cf-qty').addEventListener('input', updatePreview);
     modal.querySelector('#cf-unit').addEventListener('change', updatePreview);
+    ['#cf-kcal100', '#cf-prot100', '#cf-carbs100', '#cf-fats100'].forEach(sel =>
+      modal.querySelector(sel).addEventListener('input', updatePreview));
     updatePreview();
 
     modal.querySelector('#cf-save').addEventListener('click', async () => {

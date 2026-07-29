@@ -2,9 +2,9 @@
 // pour analyse et conseils (nutrition / entraînement).
 import {
   getAllWorkouts, getAllNutrition, getAllSleep, getAllHydration,
-  getNutritionGoals, getHydrationGoal, getUserProfile,
+  getNutritionGoals, getHydrationGoal,
 } from './db.js';
-import { formatDateFR, getWeekNumber, getPhase } from './utils.js';
+import { formatDateFR, addDays } from './utils.js';
 
 const MEAL_SECTIONS = [
   { key: 'breakfast',      label: 'Petit-déjeuner' },
@@ -53,6 +53,31 @@ function nutritionDayTotals(nut) {
 
 function hydrationDayTotal(hyd) {
   return (hyd?.entries || []).reduce((s, e) => s + (e.ml || 0), 0);
+}
+
+// Volume des liquides enregistrés dans la nutrition (unit === 'ml'), comme
+// le fait la vue Hydratation qui les compte dans le total « Autres ».
+function nutritionLiquidsMl(nut) {
+  let ml = 0;
+  const sections = nut?.sections || {};
+  for (const items of Object.values(sections)) {
+    for (const it of items || []) {
+      if (it?.unit === 'ml' && it.qty > 0) ml += it.qty;
+    }
+  }
+  return ml;
+}
+
+// Le doc sommeil est daté du jour de réveil → la nuit va de la veille à ce jour.
+// Ex : doc du 28/07 → "Nuit du 27 au 28 juillet" (ou cross-mois : "du 31 juillet au 1er août").
+function nightLabel(dateStr) {
+  const from = new Date(addDays(dateStr, -1) + 'T00:00:00');
+  const to   = new Date(dateStr + 'T00:00:00');
+  const day   = d => (d.getDate() === 1 ? '1er' : String(d.getDate()));
+  const month = d => d.toLocaleDateString('fr-FR', { month: 'long' });
+  return from.getMonth() === to.getMonth()
+    ? `Nuit du ${day(from)} au ${day(to)} ${month(to)}`
+    : `Nuit du ${day(from)} ${month(from)} au ${day(to)} ${month(to)}`;
 }
 
 // Décimal d'heures → "7h20"
@@ -110,14 +135,13 @@ function cardioLine(c) {
 // ─── Construction du Markdown ────────────────────────────────────────────────
 
 export async function buildMarkdownExport(from, to) {
-  const [workouts, nutrition, sleep, hydration, nutGoals, hydGoal, profile] = await Promise.all([
+  const [workouts, nutrition, sleep, hydration, nutGoals, hydGoal] = await Promise.all([
     getAllWorkouts().catch(() => []),
     getAllNutrition().catch(() => []),
     getAllSleep().catch(() => []),
     getAllHydration().catch(() => []),
     getNutritionGoals().catch(() => null),
     getHydrationGoal().catch(() => null),
-    getUserProfile().catch(() => null),
   ]);
 
   const wMap = indexByDate(workouts, from, to);
@@ -127,27 +151,12 @@ export async function buildMarkdownExport(from, to) {
 
   const allDates = [...new Set([...wMap.keys(), ...nMap.keys(), ...sMap.keys(), ...hMap.keys()])].sort();
 
-  const startDate = profile?.startDate || null;
-  const weekPhase = (dateStr) => {
-    if (!startDate) return null;
-    const wk = getWeekNumber(startDate, dateStr);
-    return wk >= 1 ? { wk, phase: getPhase(wk) } : null;
-  };
-
   const nbDays = Math.round((new Date(to + 'T12:00:00') - new Date(from + 'T12:00:00')) / 86400000) + 1;
 
   const L = []; // lignes de sortie
 
   // ── En-tête ──
   L.push(`# Export Sport & Santé — ${from} → ${to} (${nbDays} jours)`, '');
-  const wpFrom = weekPhase(from), wpTo = weekPhase(to);
-  if (wpFrom && wpTo) {
-    if (wpFrom.wk === wpTo.wk) {
-      L.push(`**Programme** : Semaine ${wpFrom.wk} · Phase ${wpFrom.phase}`);
-    } else {
-      L.push(`**Programme** : Semaine ${wpFrom.wk} (${wpFrom.phase}) → Semaine ${wpTo.wk} (${wpTo.phase})`);
-    }
-  }
   if (nutGoals) {
     L.push(`**Objectifs nutrition** : ${r0(nutGoals.kcal)} kcal · P ${r0(nutGoals.prot)}g · G ${r0(nutGoals.carbs)}g · L ${r0(nutGoals.fats)}g`);
   }
@@ -227,8 +236,11 @@ export async function buildMarkdownExport(from, to) {
     L.push('');
   }
 
-  // Hydratation
-  const hydTotals = [...hMap.values()].map(hydrationDayTotal).filter(v => v > 0);
+  // Hydratation (eau + liquides nutrition en ml, comme la vue Hydratation)
+  const hydDates = [...new Set([...hMap.keys(), ...nMap.keys()])];
+  const hydTotals = hydDates
+    .map(d => hydrationDayTotal(hMap.get(d)) + nutritionLiquidsMl(nMap.get(d)))
+    .filter(v => v > 0);
   if (hydTotals.length) {
     const avg = hydTotals.reduce((a, b) => a + b, 0) / hydTotals.length;
     L.push(`**Hydratation** (${hydTotals.length} jour${hydTotals.length > 1 ? 's' : ''})`);
@@ -245,8 +257,7 @@ export async function buildMarkdownExport(from, to) {
   L.push('## Détail par jour', '');
 
   for (const date of allDates) {
-    const wp = weekPhase(date);
-    L.push(`### ${formatDateFR(date)} — ${date}${wp ? ` · S${wp.wk} ${wp.phase}` : ''}`);
+    L.push(`### ${formatDateFR(date)} — ${date}`);
 
     // Poids
     const w = wMap.get(date);
@@ -306,14 +317,16 @@ export async function buildMarkdownExport(from, to) {
       const window = (s.bedtime || s.wakeTime) ? `${s.bedtime || '?'} → ${s.wakeTime || '?'} · ` : '';
       const qual = typeof s.quality === 'number' ? ` · qualité ${s.quality}/10` : '';
       const note = s.note ? ` — ${s.note}` : '';
-      L.push(`**Sommeil** : ${window}${dur}${qual}${note}`);
+      L.push(`**Sommeil** (${nightLabel(date)}) : ${window}${dur}${qual}${note}`);
     }
 
-    // Hydratation
-    const hyd = hMap.get(date);
-    if (hyd) {
-      const total = hydrationDayTotal(hyd);
-      if (total > 0) L.push(`**Hydratation** : ${total} ml${hydGoal ? ` / ${hydGoal} ml` : ''}`);
+    // Hydratation (eau + liquides nutrition en ml)
+    const water = hydrationDayTotal(hMap.get(date));
+    const other = nutritionLiquidsMl(nMap.get(date));
+    const totalHyd = water + other;
+    if (totalHyd > 0) {
+      const breakdown = other > 0 ? ` (eau ${water} ml + autres ${other} ml)` : '';
+      L.push(`**Hydratation** : ${totalHyd} ml${breakdown}${hydGoal ? ` / ${hydGoal} ml` : ''}`);
     }
 
     L.push('');
