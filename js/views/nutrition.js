@@ -659,25 +659,19 @@ async function openDayAdjustModal() {
     </div>`;
 
   try {
-    const apiKey = await getApiKey();
-    if (!apiKey) {
-      inner.innerHTML = `
-        <div style="text-align:center;padding:32px 16px">
-          <p style="font-size:32px;margin-bottom:8px">🔑</p>
-          <p style="font-size:14px;font-weight:500">Clé API requise</p>
-          <p style="font-size:13px;color:var(--text-secondary);margin-top:6px">Configure ta clé Gemini dans ⚙️ Paramètres.</p>
-          <button id="nd-close-key" class="btn btn-primary" style="margin-top:16px;width:100%">Fermer</button>
-        </div>`;
-      inner.querySelector('#nd-close-key').addEventListener('click', close);
-      return;
-    }
+    // La clé est facultative : le calcul déterministe (vélo/cardio chiffrés) marche hors-ligne.
+    const apiKey = await getApiKey().catch(() => null);
 
     const [workout, profile, weeklies] = await Promise.all([
       getWorkout(currentDate).catch(() => null),
       getUserProfile().catch(() => null),
       getLastWeeklies(4).catch(() => []),
     ]);
-    const lastWeight   = weeklies.at(-1)?.weight || profile?.weight;
+    const bio = {
+      weight: weeklies.at(-1)?.weight || profile?.weight || null,
+      age:    profile?.age || null,
+      sex:    profile?.sex || 'M',
+    };
     const activityDesc = _describeWorkout(workout);
 
     inner.innerHTML = `
@@ -687,7 +681,7 @@ async function openDayAdjustModal() {
         <p style="font-size:12px;color:var(--text-secondary);margin-top:6px;font-style:italic">${activityDesc}</p>
       </div>`;
 
-    const result = await _geminiDayAdjust(_goals, activityDesc, lastWeight, apiKey);
+    const result = await _buildDayAdjust(workout, bio, apiKey);
     _showDayAdjustResult(inner, close, result, activityDesc);
 
   } catch (err) {
@@ -747,28 +741,163 @@ function _describeSession(s) {
   return `Muscu${mg} — ${done}/${total} ex.${names ? ' : ' + names : ''}`;
 }
 
-async function _geminiDayAdjust(baseGoals, activityDesc, weight, apiKey) {
+// ─── Dépense calorique — calcul déterministe ────────────────────────────────
+// On ne réinjecte que ~75 % de la dépense brute : la base (BMR × 1.4) inclut
+// déjà une activité légère → réinjecter 100 % double-compterait cette part.
+const REINJECT_FACTOR = 0.75;
+
+// Sépare les séances réelles (hors repos / skipped) et normalise l'ancien format mono-séance.
+function _splitSessions(workout) {
+  if (!workout || workout.skipped || workout.dayType === 'rest') return [];
+  const raw = Array.isArray(workout.sessions) && workout.sessions.length > 0
+    ? workout.sessions
+    : [{ type: workout.dayType, bikeData: workout.bikeData, cardioData: workout.cardioData,
+         exercises: workout.exercises, muscleGroup: workout.muscleGroup, skipped: workout.skipped }];
+  return raw.filter(s => !s.skipped && s.type !== 'rest');
+}
+
+function _sessionShortName(s) {
+  if (s.type === 'velo' || s.bikeData) return 'Vélo';
+  if (s.type === 'course') return 'Course';
+  if (s.type === 'marche') return 'Marche';
+  return 'Muscu';
+}
+
+function _autoLabel(sessions) {
+  if (!sessions.length) return 'Repos';
+  const names = [...new Set(sessions.map(_sessionShortName))];
+  return names.slice(0, 2).join(' + ');
+}
+
+// Formule de Keytel (2005) : dépense (kcal) à partir de la FC moyenne. Bornée ≥ 0.
+function _keytel(fc, durMin, weight, age, sex) {
+  const perMin = sex === 'F'
+    ? (-20.4022 + 0.4472 * fc - 0.1263 * weight + 0.0740 * age) / 4.184
+    : (-55.0969 + 0.6309 * fc + 0.1988 * weight + 0.2017 * age) / 4.184;
+  return Math.max(0, Math.round(perMin * durMin));
+}
+
+// Dépense d'UNE séance, par ordre de précision : puissance > FC (Keytel) > MET > distance.
+// { kcal, method, confident } — confident=false → données trop pauvres, à confier au LLM.
+function _sessionExpenditure(s, weight, age, sex) {
+  // ── Vélo ──
+  if (s.type === 'velo' || s.bikeData) {
+    const b = s.bikeData || {};
+    const dur = b.durationMinutes || 0;
+    // 1. Puissance (Strava) : rendement humain ~24 % × conversion kJ→kcal ÷4.184 ≈ s'annulent → 1 kJ ≈ 1 kcal
+    if (b.wattsAvg > 0 && dur > 0)
+      return { kcal: Math.round(b.wattsAvg * dur * 60 / 1000), method: 'puissance', confident: true };
+    // 2. Fréquence cardiaque (Keytel)
+    if (b.fcAvg > 0 && dur > 0 && weight && age)
+      return { kcal: _keytel(b.fcAvg, dur, weight, age, sex), method: 'FC', confident: true };
+    // 3. MET vélo modéré (~7) via la durée
+    if (dur > 0 && weight)
+      return { kcal: Math.round(7 * weight * (dur / 60)), method: 'MET', confident: true };
+    // 4. Défaut : ~0.28 kcal/kg/km
+    if (b.distanceKm > 0 && weight)
+      return { kcal: Math.round(b.distanceKm * weight * 0.28), method: 'distance', confident: true };
+    return { kcal: 0, method: null, confident: false };
+  }
+
+  // ── Course / marche ──
+  if (s.type === 'course' || s.type === 'marche' || s.cardioData) {
+    const c = s.cardioData || {};
+    const dur = c.durationMinutes || 0;
+    if (c.caloriesBurned > 0)
+      return { kcal: Math.round(c.caloriesBurned), method: 'mesuré', confident: true };
+    if (c.fcAvg > 0 && dur > 0 && weight && age)
+      return { kcal: _keytel(c.fcAvg, dur, weight, age, sex), method: 'FC', confident: true };
+    const met = s.type === 'course' ? 9.8 : 3.5;
+    if (dur > 0 && weight)
+      return { kcal: Math.round(met * weight * (dur / 60)), method: 'MET', confident: true };
+    if (c.distanceKm > 0 && weight)
+      return { kcal: Math.round(c.distanceKm * weight * (s.type === 'course' ? 1.036 : 0.53)), method: 'distance', confident: true };
+    return { kcal: 0, method: null, confident: false };
+  }
+
+  // ── Musculation & autres : peu de données chiffrées → estimation LLM ──
+  return { kcal: 0, method: null, confident: false };
+}
+
+// Orchestration : déterministe pour les séances riches, LLM (borné) pour les pauvres.
+async function _buildDayAdjust(workout, bio, apiKey) {
+  const sessions = _splitSessions(workout);
+
+  let deterministicKcal = 0;
+  const methods = [];   // séances calculées précisément
+  const lowData = [];   // séances à estimer (peu de données)
+  for (const s of sessions) {
+    const e = _sessionExpenditure(s, bio.weight, bio.age, bio.sex);
+    if (e.confident) {
+      deterministicKcal += e.kcal;
+      methods.push(`${_sessionShortName(s)} (${e.method}) ${e.kcal} kcal`);
+    } else {
+      lowData.push(_describeSession(s));
+    }
+  }
+
+  // Estimation des séances pauvres + texte (Gemini si clé, sinon fallback MET local)
+  let estimatedKcal = 0, label = null, tips = [];
+  if (apiKey) {
+    const g = await _geminiEstimate(_goals, bio, deterministicKcal, methods, lowData, apiKey);
+    estimatedKcal = Math.max(0, Math.round(g.estimatedKcal || 0));
+    label = g.label || null;
+    tips  = Array.isArray(g.tips) ? g.tips : [];
+  } else if (lowData.length && bio.weight) {
+    estimatedKcal = lowData.length * Math.round(5 * bio.weight * 0.75); // ~5 METs, 45 min supposées
+  }
+
+  const grossKcal = deterministicKcal + estimatedKcal;
+
+  if (grossKcal <= 0) {
+    if (sessions.length && !apiKey)
+      throw new Error('Renseigne ton poids et ton âge dans « ✨ Ma base » (ou configure ta clé Gemini) pour estimer cette séance.');
+    return { kcalDelta: 0, protDelta: 0, carbsDelta: 0, fatsDelta: 0,
+             label: label || _autoLabel(sessions), tips, methodNote: null };
+  }
+
+  // Facteur de réinjection + plafond de sécurité (jamais plus de 25 % de la base)
+  const cap = Math.round(_goals.kcal * 0.25);
+  const delta = Math.max(0, Math.min(Math.round(grossKcal * REINJECT_FACTOR), cap));
+
+  // Répartition orientée récupération : glucides majoritaires, un peu de protéines, pas de lipides
+  const protDelta  = Math.round(delta * 0.20 / 4);
+  const carbsDelta = Math.round(delta * 0.80 / 4);
+
+  const pct = Math.round(REINJECT_FACTOR * 100);
+  const methodNote = methods.length
+    ? `${methods.join(' · ')}${estimatedKcal ? ` · autres ~${estimatedKcal}` : ''} → ${grossKcal} kcal dépensés, ${pct} % réinjectés`
+    : `~${grossKcal} kcal estimés, ${pct} % réinjectés`;
+
+  return { kcalDelta: delta, protDelta, carbsDelta, fatsDelta: 0,
+           label: label || _autoLabel(sessions), tips, methodNote };
+}
+
+// Appel Gemini borné : estime UNIQUEMENT la dépense des séances pauvres en données + le texte.
+// temperature 0 + repères MET dans le prompt → réponse stable et ancrée (fini les 700↔230).
+async function _geminiEstimate(base, bio, deterministicKcal, methods, lowData, apiKey) {
   const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
+  const prompt =
+`Tu es nutritionniste sportif. Base au repos (activité légère déjà incluse) : ${base.kcal} kcal.
+${bio.weight ? `Poids : ${bio.weight} kg. ` : ''}${bio.age ? `Âge : ${bio.age} ans. ` : ''}${bio.sex === 'F' ? 'Femme.' : 'Homme.'}
+
+Dépense DÉJÀ calculée précisément (ne la ré-estime pas) : ${deterministicKcal} kcal${methods.length ? ` (${methods.join(', ')})` : ''}.
+
+${lowData.length
+  ? `Séances à estimer (peu de données chiffrées) : ${lowData.join(' ; ')}.
+Repères MET — kcal ≈ MET × poids_kg × heures : musculation ~5, circuit/HIIT ~8, yoga/étirements ~3. Durée inconnue → suppose 45 min.`
+  : `Aucune séance supplémentaire à estimer → estimatedKcal doit valoir 0.`}
+
+Réponds UNIQUEMENT avec ce JSON :
+{"estimatedKcal":0,"label":"Séance muscu","tips":["Conseil 1","Conseil 2"]}
+estimatedKcal = entier, dépense BRUTE des SEULES séances à estimer (0 si aucune). label = 2-3 mots résumant la journée. 2 tips courts (récupération, glucides, protéines).`;
+
   const res = await fetch(endpoint, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({
-      contents: [{ parts: [{ text:
-        `Tu es nutritionniste sportif. Voici les besoins nutritionnels de base (au repos, sans sport) :
-- Calories : ${baseGoals.kcal} kcal
-- Protéines : ${baseGoals.prot} g
-- Glucides : ${baseGoals.carbs} g
-- Lipides : ${baseGoals.fats} g
-${weight ? `- Poids : ${weight} kg` : ''}
-
-Activité d'aujourd'hui : ${activityDesc}
-
-Propose l'ajustement nutritionnel pour cette journée.
-Réponds UNIQUEMENT avec ce JSON :
-{"kcalDelta":0,"protDelta":0,"carbsDelta":0,"fatsDelta":0,"label":"Repos","tips":["Conseil 1","Conseil 2"]}
-
-Si journée repos : kcalDelta = 0. label = 2-3 mots max (ex: "Séance muscu", "Sortie vélo", "Repos actif"). Valeurs entières. 2 tips courts et pratiques.` }] }],
-      generationConfig: { temperature: 0.1, maxOutputTokens: 16000, responseMimeType: 'application/json' },
+      contents: [{ parts: [{ text: prompt }] }],
+      generationConfig: { temperature: 0, maxOutputTokens: 16000, responseMimeType: 'application/json' },
     }),
   });
   if (!res.ok) {
@@ -835,6 +964,8 @@ function _showDayAdjustResult(inner, close, result, activityDesc) {
         <div style="font-size:10px;color:var(--text-secondary)">lipides</div>
       </div>
     </div>
+
+    ${result.methodNote ? `<p style="font-size:11px;color:var(--text-secondary);text-align:center;margin:-4px 0 12px;line-height:1.5">📐 ${result.methodNote}</p>` : ''}
 
     ${result.tips?.length ? `<div style="display:flex;flex-direction:column;gap:6px;margin-bottom:14px">
       ${result.tips.map(t => `<div class="ng-tip">💡 ${t}</div>`).join('')}
