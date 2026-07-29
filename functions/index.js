@@ -656,7 +656,7 @@ exports.getCoachAdvice = onCall(
 
 // ========== PROCESS HEALTH DOCUMENT (Claude Vision) ==========
 exports.processHealthDoc = onCall(
-  { maxInstances: 3, timeoutSeconds: 60, region: "europe-west1", invoker: "public" },
+  { maxInstances: 3, timeoutSeconds: 120, memory: "512MiB", region: "europe-west1", invoker: "public" },
   async (request) => {
     if (!request.auth) {
       throw new HttpsError("unauthenticated", "Authentification requise.");
