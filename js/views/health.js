@@ -42,14 +42,15 @@ export async function render(container) {
         <div class="form-group">
           <label>Photo ou PDF du document</label>
           <div class="upload-zone" id="upload-zone">
-            <input type="file" id="health-file" accept="image/*,.pdf" style="display:none">
+            <input type="file" id="health-file" accept="image/*,.pdf" multiple style="display:none">
             <div class="upload-placeholder" id="upload-placeholder">
               <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="var(--text-secondary)" stroke-width="2">
                 <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/>
                 <polyline points="17 8 12 3 7 8"/>
                 <line x1="12" y1="3" x2="12" y2="15"/>
               </svg>
-              <span style="color:var(--text-secondary);font-size:13px;margin-top:4px">Appuie pour choisir un fichier</span>
+              <span style="color:var(--text-secondary);font-size:13px;margin-top:4px">Appuie pour choisir un ou plusieurs fichiers</span>
+              <span style="color:var(--text-secondary);font-size:12px;margin-top:2px">(pages d'une même analyse → un seul document)</span>
             </div>
             <div class="upload-preview hidden" id="upload-preview">
               <span id="upload-filename"></span>
@@ -154,8 +155,8 @@ export async function render(container) {
     });
   });
 
-  // --- File input ---
-  let selectedFile = null;
+  // --- File input (multi-fichiers : pages d'une même analyse) ---
+  let selectedFiles = [];
   const fileInput = document.getElementById('health-file');
   const uploadZone = document.getElementById('upload-zone');
   const placeholder = document.getElementById('upload-placeholder');
@@ -164,16 +165,18 @@ export async function render(container) {
 
   uploadZone.addEventListener('click', () => fileInput.click());
   fileInput.addEventListener('change', () => {
-    selectedFile = fileInput.files[0] || null;
-    if (selectedFile) {
+    selectedFiles = Array.from(fileInput.files || []);
+    if (selectedFiles.length > 0) {
       placeholder.classList.add('hidden');
       preview.classList.remove('hidden');
-      filenameEl.textContent = selectedFile.name;
+      filenameEl.textContent = selectedFiles.length === 1
+        ? selectedFiles[0].name
+        : `${selectedFiles.length} fichiers sélectionnés`;
     }
   });
   document.getElementById('upload-clear').addEventListener('click', (e) => {
     e.stopPropagation();
-    selectedFile = null;
+    selectedFiles = [];
     fileInput.value = '';
     placeholder.classList.remove('hidden');
     preview.classList.add('hidden');
@@ -182,25 +185,34 @@ export async function render(container) {
   // --- Upload & analyze ---
   let pendingExtraction = null;
   document.getElementById('health-upload-btn').addEventListener('click', async () => {
-    if (!selectedFile) { showToast('Choisis un fichier'); return; }
+    if (selectedFiles.length === 0) { showToast('Choisis au moins un fichier'); return; }
 
     const btn = document.getElementById('health-upload-btn');
     btn.disabled = true;
-    btn.textContent = 'Upload en cours...';
 
     try {
-      const { path, url } = await uploadHealthFile(selectedFile);
+      const uploaded = [];
+      for (let i = 0; i < selectedFiles.length; i++) {
+        btn.textContent = selectedFiles.length > 1
+          ? `Upload ${i + 1}/${selectedFiles.length}...`
+          : 'Upload en cours...';
+        uploaded.push(await uploadHealthFile(selectedFiles[i]));
+      }
       btn.textContent = 'Analyse en cours...';
 
+      const storagePaths = uploaded.map(u => u.path);
       const result = await processHealthDocFn({
-        fileUrl: url,
-        storagePath: path,
+        storagePaths,
+        fileUrl: uploaded[0].url, // rétro-compat
+        storagePath: storagePaths[0], // rétro-compat
         type: document.getElementById('health-type').value,
         date: document.getElementById('health-date').value,
       });
 
       if (result.data.error) {
         showToast(result.data.message || 'Erreur');
+        // Nettoyer les fichiers uploadés en cas d'échec
+        for (const u of uploaded) await deleteHealthFile(u.path);
         btn.disabled = false;
         btn.textContent = 'Analyser le document';
         return;
@@ -211,7 +223,7 @@ export async function render(container) {
         date: document.getElementById('health-date').value,
         type: document.getElementById('health-type').value,
         summary: extracted,
-        storagePath: path,
+        storagePaths,
         source: 'upload',
       };
 
@@ -240,8 +252,8 @@ export async function render(container) {
 
     try {
       await saveHealthDoc(pendingExtraction);
-      // Delete original file from storage (only keep summary)
-      await deleteHealthFile(pendingExtraction.storagePath);
+      // Delete original files from storage (only keep summary + biomarkers)
+      for (const path of (pendingExtraction.storagePaths || [])) await deleteHealthFile(path);
       showToast('Document enregistre');
       pendingExtraction = null;
       render(container);

@@ -662,10 +662,15 @@ exports.processHealthDoc = onCall(
       throw new HttpsError("unauthenticated", "Authentification requise.");
     }
     const uid = request.auth.uid;
-    const { fileUrl, storagePath, type, date } = request.data;
+    const { storagePaths, storagePath, type, date } = request.data;
 
-    if (!fileUrl || !storagePath) {
-      throw new HttpsError("invalid-argument", "URL du fichier manquante.");
+    // Supporte plusieurs fichiers (pages d'une même analyse) ou un seul (rétro-compat).
+    const paths = Array.isArray(storagePaths) && storagePaths.length
+      ? storagePaths
+      : (storagePath ? [storagePath] : []);
+
+    if (paths.length === 0) {
+      throw new HttpsError("invalid-argument", "Aucun fichier fourni.");
     }
 
     // Read API key
@@ -675,19 +680,24 @@ exports.processHealthDoc = onCall(
     }
     const apiKey = apiKeyDoc.data().key;
 
-    // Download file from Storage to get base64
-    const bucket = getStorage().bucket();
-    const file = bucket.file(storagePath);
-    const [fileBuffer] = await file.download();
-    const base64Data = fileBuffer.toString("base64");
-
-    // Determine media type
-    const ext = storagePath.split(".").pop().toLowerCase();
     const mediaTypes = {
       jpg: "image/jpeg", jpeg: "image/jpeg", png: "image/png",
       gif: "image/gif", webp: "image/webp", pdf: "application/pdf",
     };
-    const mediaType = mediaTypes[ext] || "image/jpeg";
+
+    // Download all files from Storage and build inline image parts.
+    const bucket = getStorage().bucket();
+    const imageParts = [];
+    for (const p of paths) {
+      const [buffer] = await bucket.file(p).download();
+      const ext = p.split(".").pop().toLowerCase();
+      imageParts.push({
+        inlineData: {
+          mimeType: mediaTypes[ext] || "image/jpeg",
+          data: buffer.toString("base64"),
+        },
+      });
+    }
 
     // Call Claude to extract health data
     const typeLabels = {
@@ -715,17 +725,21 @@ Règles pour "biomarkers" :
 - "unit" = unité telle qu'écrite sur le document (ex: "g/dL", "mg/dL", "%", "UI/L").
 - Utilise des libellés français clairs et standards (ex: "Hémoglobine", "LDL-cholestérol", "Créatinine", "AST", "Vitamine D (25OH)").
 - Si le document n'est pas une analyse biologique (ex: imagerie), renvoie "biomarkers": [].
+- Les images/pages fournies appartiennent à UNE SEULE analyse : fusionne-les en un seul résultat, sans doublon.
 Pour "summary" : résume les observations. Sois factuel, aucun conseil médical.`,
       });
+      const pagesNote = imageParts.length > 1
+        ? ` Ce document comporte ${imageParts.length} pages/images à fusionner.`
+        : "";
       const response = await visionModel.generateContent({
         contents: [{
           role: "user",
           parts: [
-            { inlineData: { mimeType: mediaType, data: base64Data } },
-            { text: `Extrais les données de ce document (${typeLabels[type] || "document médical"}, date: ${date}).` },
+            ...imageParts,
+            { text: `Extrais les données de ce document (${typeLabels[type] || "document médical"}, date: ${date}).${pagesNote}` },
           ],
         }],
-        generationConfig: { maxOutputTokens: 2048, responseMimeType: "application/json" },
+        generationConfig: { maxOutputTokens: 4096, responseMimeType: "application/json" },
       });
 
       const rawText = response.response.text();
