@@ -815,7 +815,15 @@ function _sessionExpenditure(s, weight, age, sex) {
     return { kcal: 0, method: null, confident: false };
   }
 
-  // ── Musculation & autres : peu de données chiffrées → estimation LLM ──
+  // ── Musculation : effort importé (Strava/Garmin) si disponible, sinon estimation LLM ──
+  const eff = s.effortData || {};
+  const effDur = eff.durationMinutes || 0;
+  if (eff.caloriesBurned > 0)
+    return { kcal: Math.round(eff.caloriesBurned), method: 'mesuré', confident: true };
+  if (eff.fcAvg > 0 && effDur > 0 && weight && age)
+    return { kcal: _keytel(eff.fcAvg, effDur, weight, age, sex), method: 'FC', confident: true };
+
+  // ── Autres / muscu sans données chiffrées → estimation LLM ──
   return { kcal: 0, method: null, confident: false };
 }
 

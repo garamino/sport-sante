@@ -37,7 +37,16 @@ async function getValidAccessToken() {
   return data.accessToken;
 }
 
-export async function importLatestCyclingActivity(date) {
+// Types Strava (type + sport_type) mappés vers les types de séance de l'app.
+const STRAVA_TYPE_MAP = {
+  velo:   ['Ride', 'VirtualRide', 'EBikeRide', 'MountainBikeRide', 'GravelRide'],
+  muscu:  ['WeightTraining', 'Workout', 'Crossfit', 'HighIntensityIntervalTraining'],
+  course: ['Run', 'TrailRun', 'VirtualRun'],
+  marche: ['Walk', 'Hike'],
+};
+
+// Récupère les activités Strava du jour (partagé par tous les imports).
+async function fetchDayActivities(date) {
   const accessToken = await getValidAccessToken();
   if (!accessToken) {
     const err = new Error('not_connected');
@@ -49,7 +58,7 @@ export async function importLatestCyclingActivity(date) {
   const dayEnd = Math.floor(new Date(date + 'T23:59:59').getTime() / 1000);
 
   const resp = await fetch(
-    `${STRAVA_API_BASE}/athlete/activities?after=${dayStart}&before=${dayEnd}&per_page=10`,
+    `${STRAVA_API_BASE}/athlete/activities?after=${dayStart}&before=${dayEnd}&per_page=30`,
     { headers: { Authorization: `Bearer ${accessToken}` } }
   );
 
@@ -60,11 +69,31 @@ export async function importLatestCyclingActivity(date) {
   }
   if (!resp.ok) throw new Error(`Erreur API Strava (${resp.status})`);
 
-  const activities = await resp.json();
-  const ride = activities.find(a =>
-    ['Ride', 'VirtualRide', 'EBikeRide'].includes(a.type) ||
-    ['Ride', 'VirtualRide', 'EBikeRide'].includes(a.sport_type)
-  );
+  return { activities: await resp.json(), accessToken };
+}
+
+function matchesType(activity, appType) {
+  const set = STRAVA_TYPE_MAP[appType] || [];
+  return set.includes(activity.type) || set.includes(activity.sport_type);
+}
+
+// Les calories ne figurent pas dans la liste d'activités : appel détaillé nécessaire.
+async function fetchCalories(activityId, accessToken) {
+  try {
+    const r = await fetch(`${STRAVA_API_BASE}/activities/${activityId}`, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+    if (!r.ok) return 0;
+    const detail = await r.json();
+    return Math.round(detail.calories || 0);
+  } catch {
+    return 0;
+  }
+}
+
+export async function importLatestCyclingActivity(date) {
+  const { activities } = await fetchDayActivities(date);
+  const ride = activities.find(a => matchesType(a, 'velo'));
   if (!ride) return null;
 
   return {
@@ -76,6 +105,22 @@ export async function importLatestCyclingActivity(date) {
     rpm: Math.round(ride.average_cadence || 0),
     stravaActivityId: ride.id,
     stravaActivityName: ride.name,
+  };
+}
+
+// Import d'une séance de renforcement musculaire (via Garmin → Strava).
+// Récupère durée + FC moyenne + calories mesurées (appel détaillé).
+export async function importLatestStrengthActivity(date) {
+  const { activities, accessToken } = await fetchDayActivities(date);
+  const act = activities.find(a => matchesType(a, 'muscu'));
+  if (!act) return null;
+
+  return {
+    durationMinutes: Math.round((act.moving_time || act.elapsed_time || 0) / 60),
+    fcAvg: Math.round(act.average_heartrate || 0),
+    caloriesBurned: await fetchCalories(act.id, accessToken),
+    stravaActivityId: act.id,
+    stravaActivityName: act.name,
   };
 }
 

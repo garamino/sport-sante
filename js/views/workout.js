@@ -1,7 +1,7 @@
 import { today, formatDateFR, addDays, showToast } from '../utils.js';
 import { getWorkout, saveWorkout, getExerciseHistory, getWorkoutTemplates, saveWorkoutTemplate, getWorkoutTemplate, getExercise, getExercises, getAllWorkouts } from '../db.js';
 import { getGuideKey, openExerciseGuide } from '../exercise-guide.js';
-import { importLatestCyclingActivity } from '../strava.js';
+import { importLatestCyclingActivity, importLatestStrengthActivity } from '../strava.js';
 import { startSessionTimer } from '../workout-timer.js';
 
 let currentDate = null;
@@ -356,13 +356,28 @@ function sessionCardHTML(session, tpl, exercises) {
   const icon = tpl?.icon || '💪';
   const name = tpl?.name || session.name || 'Séance muscu';
   const isSkipped = session.skipped;
+  const eff = session.effortData || {};
+  const effortBadge = (eff.caloriesBurned || eff.durationMinutes || eff.fcAvg)
+    ? `<div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:0 10px 8px;font-size:12px;color:var(--text-secondary)">
+        <span style="color:#fc4c02;font-weight:600">⚡ Effort importé</span>
+        ${eff.caloriesBurned  ? `<span>🔥 ${eff.caloriesBurned} cal</span>` : ''}
+        ${eff.durationMinutes ? `<span>⏱️ ${eff.durationMinutes} min</span>` : ''}
+        ${eff.fcAvg           ? `<span>❤️ ${eff.fcAvg} bpm</span>` : ''}
+       </div>`
+    : '';
 
   return `
     <div class="card session-card" data-session-id="${sid}" style="margin-bottom:10px">
-      <div style="display:flex;align-items:center;justify-content:space-between;padding:10px;padding-bottom:6px">
-        <strong>${icon} ${name}</strong>
-        <button class="btn btn-small btn-delete-session" data-session-id="${sid}" style="font-size:11px;padding:4px 8px;background:none;border:1px solid var(--border);color:var(--text-secondary)">Supprimer</button>
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:10px;padding-bottom:6px;gap:8px">
+        <strong style="flex:1;min-width:0">${icon} ${name}</strong>
+        ${isSkipped ? '' : `<button class="btn btn-small btn-strava-muscu" data-session-id="${sid}" title="Importer l'effort depuis Strava" style="display:flex;align-items:center;gap:5px;font-size:12px;padding:5px 10px;background:#fc4c02;color:#fff;border:none;flex-shrink:0">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M15.387 17.944l-2.089-4.116h-3.065L15.387 24l5.15-10.172h-3.066m-7.008-5.599l2.836 5.598h4.172L10.463 0l-7 13.828h4.169"/></svg>
+          Strava
+        </button>`}
+        <button class="btn btn-small btn-delete-session" data-session-id="${sid}" style="font-size:11px;padding:4px 8px;background:none;border:1px solid var(--border);color:var(--text-secondary);flex-shrink:0">Supprimer</button>
       </div>
+
+      ${effortBadge}
 
       ${isSkipped ? `<div class="skipped-banner">Séance non faite</div>` : ''}
 
@@ -645,6 +660,37 @@ function bindSessionEvents(body, session, exercises) {
           showToast(err.message || 'Erreur import Strava');
         }
       } finally {
+        btn.disabled = false;
+        btn.innerHTML = `<svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M15.387 17.944l-2.089-4.116h-3.065L15.387 24l5.15-10.172h-3.066m-7.008-5.599l2.836 5.598h4.172L10.463 0l-7 13.828h4.169"/></svg> Strava`;
+      }
+    });
+  }
+
+  // Import Strava (renforcement musculaire) — récupère l'effort (durée, FC, calories)
+  if (type === 'muscu') {
+    card.querySelector(`.btn-strava-muscu[data-session-id="${sid}"]`)?.addEventListener('click', async (e) => {
+      const btn = e.currentTarget;
+      btn.disabled = true;
+      btn.textContent = 'Chargement...';
+      try {
+        const effort = await importLatestStrengthActivity(currentDate);
+        if (!effort) {
+          showToast('Aucune séance de renfo trouvée sur Strava pour cette date');
+          return;
+        }
+        const idx = _ws.sessions.findIndex(s => s.id === sid);
+        if (idx !== -1) {
+          _ws.sessions[idx] = { ..._ws.sessions[idx], effortData: effort };
+          await saveWorkout(currentDate, buildWorkoutDoc(_ws));
+          showToast(`Effort importé : ${effort.stravaActivityName || 'Renforcement'} ✓`);
+          await renderSessionsList(body);
+        }
+      } catch (err) {
+        if (err.code === 'not_connected') {
+          showToast('Connecte ton compte Strava dans les paramètres ⚙️');
+        } else {
+          showToast(err.message || 'Erreur import Strava');
+        }
         btn.disabled = false;
         btn.innerHTML = `<svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M15.387 17.944l-2.089-4.116h-3.065L15.387 24l5.15-10.172h-3.066m-7.008-5.599l2.836 5.598h4.172L10.463 0l-7 13.828h4.169"/></svg> Strava`;
       }
