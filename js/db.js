@@ -246,6 +246,27 @@ export async function deleteWorkoutTemplate(id) {
   await deleteDoc(userDoc(`workoutTemplates/${id}`));
 }
 
+// === Library — Intake Products (médicaments / compléments) ===
+export async function getIntakeProducts() {
+  const q = query(userCollection('intakeProducts'), orderBy('name', 'asc'));
+  const snap = await getDocs(q);
+  return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+}
+
+export async function saveIntakeProduct(data) {
+  if (data.id) {
+    const { id, ...rest } = data;
+    await setDoc(userDoc(`intakeProducts/${id}`), { ...rest, updatedAt: Timestamp.now() }, { merge: true });
+    return id;
+  }
+  const ref = await addDoc(userCollection('intakeProducts'), { ...data, createdAt: Timestamp.now() });
+  return ref.id;
+}
+
+export async function deleteIntakeProduct(id) {
+  await deleteDoc(userDoc(`intakeProducts/${id}`));
+}
+
 // === Strava ===
 export async function getStravaCredentials() {
   const snap = await getDoc(userDoc('settings/stravaCredentials'));

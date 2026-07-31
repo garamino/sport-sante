@@ -16,10 +16,12 @@ import * as chartsView from './views/charts.js';
 import * as healthView from './views/health.js';
 import * as intakesView from './views/intakes.js';
 import * as libraryView from './views/library.js';
+import * as productsView from './views/products.js';
 import * as nutritionView from './views/nutrition.js';
 import * as hydrationView from './views/hydration.js';
 import { migrateMedsToIntakes } from './migrations.js';
 import { seedLibrary } from './migrations/seed-library.js';
+import { seedIntakeProducts } from './migrations/seed-intake-products.js';
 
 // Register routes
 registerRoute('/login', loginView);
@@ -31,6 +33,7 @@ registerRoute('/charts', chartsView);
 registerRoute('/health', healthView);
 registerRoute('/intakes', intakesView);
 registerRoute('/library', libraryView);
+registerRoute('/products', productsView);
 registerRoute('/nutrition', nutritionView);
 registerRoute('/hydration', hydrationView);
 
@@ -49,6 +52,7 @@ onAuth(async (user) => {
     await updateHeader();
     migrateMedsToIntakes().catch(err => console.warn('Migration intakesV1 a échoué :', err));
     seedLibrary().catch(err => console.warn('Seed library a échoué :', err));
+    seedIntakeProducts().catch(err => console.warn('Seed intake products a échoué :', err));
 
     // Callback OAuth Strava (?code=... dans l'URL)
     const urlParams = new URLSearchParams(window.location.search);

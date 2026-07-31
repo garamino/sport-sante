@@ -1,23 +1,26 @@
 import { today, formatDateFR, addDays, showToast } from '../utils.js';
-import { getIntakes, saveIntakes } from '../db.js';
-
-const PRODUCTS = [
-  'Metasleep',
-  'Metarelax',
-  'Trazodone 100mg',
-  'Stilnoct 10mg',
-  'Ashwagandha 300mg',
-  'L-Théanine 200mg',
-  'D-Pearls 38 microgr',
-  'Forténight',
-];
+import { getIntakes, saveIntakes, getIntakeProducts } from '../db.js';
 
 const QUANTITIES = ['1', '1/2', '1/4'];
 
 const fmtQty = q => q === '1/2' ? '½' : q === '1/4' ? '¼' : q;
 
+const escapeHtml = str => String(str).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
 let currentDate = null;
 let entries = [];
+let productNames = [];
+
+// Construit les <option> à partir de la bibliothèque Firestore.
+// `selected` est toujours inclus, même s'il ne fait plus partie de la
+// bibliothèque (produit legacy ou supprimé) — pour ne pas casser l'existant.
+function productOptions(selected = '') {
+  const names = [...productNames];
+  if (selected && !names.some(n => n === selected)) names.unshift(selected);
+  return names
+    .map(n => `<option value="${escapeHtml(n)}"${n === selected ? ' selected' : ''}>${escapeHtml(n)}</option>`)
+    .join('');
+}
 
 function shortId() {
   if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID().slice(0, 8);
@@ -41,8 +44,12 @@ export async function render(container, resetDate = true) {
   container.innerHTML = '<div class="spinner"></div>';
 
   try {
-    const existing = await getIntakes(currentDate).catch(() => null);
+    const [existing, products] = await Promise.all([
+      getIntakes(currentDate).catch(() => null),
+      getIntakeProducts().catch(() => []),
+    ]);
     entries = sortEntries(existing?.entries || []);
+    productNames = products.map(p => p.name).filter(Boolean);
 
     container.innerHTML = `
       <div class="date-nav">
@@ -57,24 +64,34 @@ export async function render(container, resetDate = true) {
       </div>
 
       <div class="card">
-        <div class="section-title" style="margin-top:0">Ajouter une prise</div>
-        <div class="form-group">
-          <label>Produit</label>
-          <select id="intake-product">
-            ${PRODUCTS.map(p => `<option value="${p}">${p}</option>`).join('')}
-          </select>
+        <div class="section-title" style="margin-top:0;display:flex;justify-content:space-between;align-items:center;gap:8px">
+          <span>Ajouter une prise</span>
+          <a href="#/products" style="font-size:12px;color:var(--accent);text-decoration:none;font-weight:400;white-space:nowrap">＋ Gérer les produits</a>
         </div>
-        <div class="form-group">
-          <label>Quantité</label>
-          <select id="intake-quantity">
-            ${QUANTITIES.map(q => `<option value="${q}">${fmtQty(q)}</option>`).join('')}
-          </select>
-        </div>
-        <div class="form-group">
-          <label>Heure</label>
-          <input type="time" id="intake-time">
-        </div>
-        <button class="btn btn-success" id="intake-add">Ajouter</button>
+        ${productNames.length === 0 ? `
+          <div style="color:var(--text-secondary);font-size:13px;padding:8px 0">
+            Aucun produit dans ta bibliothèque.
+            <a href="#/products" style="color:var(--accent)">Ajoute ton premier médicament/complément</a>.
+          </div>
+        ` : `
+          <div class="form-group">
+            <label>Produit</label>
+            <select id="intake-product">
+              ${productOptions()}
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Quantité</label>
+            <select id="intake-quantity">
+              ${QUANTITIES.map(q => `<option value="${q}">${fmtQty(q)}</option>`).join('')}
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Heure</label>
+            <input type="time" id="intake-time">
+          </div>
+          <button class="btn btn-success" id="intake-add">Ajouter</button>
+        `}
       </div>
     `;
 
@@ -87,7 +104,7 @@ export async function render(container, resetDate = true) {
       render(container, false);
     });
 
-    document.getElementById('intake-add').addEventListener('click', async () => {
+    document.getElementById('intake-add')?.addEventListener('click', async () => {
       const product = document.getElementById('intake-product').value;
       const quantity = document.getElementById('intake-quantity').value;
       const time = document.getElementById('intake-time').value;
@@ -112,7 +129,7 @@ function renderList() {
       <div class="intake-item-line">
         <span class="intake-time">${e.time || '—'}</span>
         <span class="intake-qty">${fmtQty(e.quantity)}</span>
-        <span class="intake-product">${e.product}</span>
+        <span class="intake-product">${escapeHtml(e.product)}</span>
       </div>
       <div class="intake-item-actions">
         <button class="intake-edit" title="Modifier">✎</button>
@@ -140,7 +157,7 @@ function bindListEvents(container) {
       itemEl.innerHTML = `
         <div class="intake-item-main" style="display:flex;flex-direction:column;gap:6px;width:100%">
           <select class="edit-product">
-            ${PRODUCTS.map(p => `<option value="${p}"${p === entry.product ? ' selected' : ''}>${p}</option>`).join('')}
+            ${productOptions(entry.product)}
           </select>
           <select class="edit-quantity">
             ${QUANTITIES.map(q => `<option value="${q}"${q === entry.quantity ? ' selected' : ''}>${fmtQty(q)}</option>`).join('')}
