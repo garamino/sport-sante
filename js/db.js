@@ -71,7 +71,10 @@ export async function getExerciseHistory(exerciseId, beforeDate, count = 5) {
     if (data.date >= beforeDate) continue;
     const ex = data.exercises?.find(e => e.id === exerciseId);
     if (ex) {
-      results.push({ date: data.date, note: ex.note || '', done: ex.done });
+      results.push({
+        date: data.date, note: ex.note || '', done: ex.done,
+        sets: ex.sets, reps: ex.reps, rest: ex.rest, weight: ex.weight, level: ex.level,
+      });
     }
     if (results.length >= count) break;
   }

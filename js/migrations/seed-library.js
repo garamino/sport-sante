@@ -1,4 +1,13 @@
 import { getUserProfile, saveUserProfile, saveExercise, saveWorkoutTemplate } from '../db.js';
+import { buildLevelFromLegacy } from '../utils.js';
+
+// Exercices ajoutés après le seed initial (aussi rejoués sur les comptes
+// existants via la migration `addExtraExercises` de migrations.js).
+export const ADDED_EXERCISES = [
+  { name: 'Fentes bulgares (pied arrière surélevé sur une chaise)', muscleGroup: 'Jambes',   defaultSets: 2, defaultReps: '8',  defaultRest: '90s', notes: '8 répétitions par jambe. Nouveau — vas-y prudemment, appuie-toi à un mur pour l\'équilibre au début. Attends-toi à des courbatures : c\'est normal, c\'est nouveau.', weight: '—' },
+  { name: 'Pont fessier unilatéral (une jambe)',                    muscleGroup: 'Fessiers',  defaultSets: 3, defaultReps: '10', defaultRest: '60s', notes: '10 répétitions par jambe. Beaucoup plus dur que la version à 2 jambes, et ça supprime le problème de charge à tenir.', weight: '—' },
+  { name: 'Mollets une jambe',                                      muscleGroup: 'Jambes',   defaultSets: 3, defaultReps: '12', defaultRest: '60s', notes: '12 répétitions par jambe.', weight: '—' },
+];
 
 // Exercices extraits de program-data.js
 const EXERCISES = [
@@ -31,6 +40,7 @@ const EXERCISES = [
   { name: 'Pompes explosives',                   muscleGroup: 'Poitrine',         defaultSets: 3, defaultReps: '8',        defaultRest: '90s', notes: 'Puissance pectorale',                                          weight: '—' },
   // Vélo
   { name: "Vélo d'appartement",                  muscleGroup: 'Cardio',           defaultSets: 1, defaultReps: '45-60 min', defaultRest: '—', notes: 'Intensité modérée · 110-128 bpm · tu dois pouvoir parler',    weight: '—' },
+  ...ADDED_EXERCISES,
 ];
 
 // Mapping nom → id Firestore (rempli après création des exercices)
@@ -75,8 +85,19 @@ export async function seedLibrary() {
   if (profile?.librarySeeded) return;
 
   // Create exercises and collect name → id mapping
+  // Chaque exercice reçoit un niveau 1 (numérique strict) + niveau par défaut = 1.
   for (const ex of EXERCISES) {
-    const id = await saveExercise(ex);
+    const level = buildLevelFromLegacy(ex);
+    const id = await saveExercise({
+      ...ex,
+      levels: [level],
+      defaultLevel: 1,
+      // Miroir legacy pour l'affichage existant
+      defaultSets: level.sets,
+      defaultReps: level.reps,
+      defaultRest: level.rest,
+      weight: level.weight,
+    });
     nameToId[ex.name] = id;
   }
 

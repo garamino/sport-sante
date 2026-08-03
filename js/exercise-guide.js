@@ -307,6 +307,46 @@ export const EXERCISE_GUIDE = {
     ],
     tips: 'Variante avancée. Si trop dur, fais des pompes classiques avec une poussée rapide sans décoller. Protège tes poignets à l\'atterrissage.',
   },
+
+  // === Variantes ajoutées (2026-08) — images réutilisées de l'exercice de base ===
+  'fentes-bulgares': {
+    muscles: 'Quadriceps, fessiers, ischio-jambiers, stabilisateurs de hanche',
+    images: [`${IMG_BASE}/Dumbbell_Lunges/0.jpg`, `${IMG_BASE}/Dumbbell_Lunges/1.jpg`],
+    steps: [
+      'Dos à une chaise, poser le dessus du pied arrière sur l\'assise',
+      'Avancer le pied avant assez loin pour que le genou reste dans l\'axe',
+      'Descendre en pliant la jambe avant, buste légèrement penché',
+      'Le genou arrière descend vers le sol, le genou avant ne dépasse pas la pointe',
+      'Pousser sur le talon avant pour remonter — finir la série avant de changer de jambe',
+    ],
+    tips: 'Nouveau : appuie-toi à un mur pour l\'équilibre au début, vas-y prudemment. Des courbatures les premiers jours sont normales.',
+  },
+
+  'pont-fessier-unilateral': {
+    muscles: 'Grand fessier, ischio-jambiers, gainage anti-rotation',
+    images: [`${IMG_BASE}/Butt_Lift_Bridge/0.jpg`, `${IMG_BASE}/Butt_Lift_Bridge/1.jpg`],
+    steps: [
+      'Allongé sur le dos, un pied à plat au sol, genou fléchi',
+      'Tendre l\'autre jambe (ou ramener le genou vers la poitrine)',
+      'Pousser sur le talon au sol pour lever les hanches',
+      'Garder le bassin bien horizontal — ne pas s\'affaisser d\'un côté',
+      'Redescendre lentement, finir la série, puis changer de jambe',
+    ],
+    tips: 'Beaucoup plus dur que la version à 2 jambes — et plus besoin de tenir une charge. Garde les hanches à niveau tout le mouvement.',
+  },
+
+  'mollets-une-jambe': {
+    muscles: 'Gastrocnémiens, soléaire (travail unilatéral)',
+    images: [`${IMG_BASE}/Calf_Raise_On_A_Dumbbell/0.jpg`, `${IMG_BASE}/Calf_Raise_On_A_Dumbbell/1.jpg`],
+    steps: [
+      'Debout sur une jambe (sur une marche pour plus d\'amplitude)',
+      'Autre pied décollé, une main en appui léger pour l\'équilibre',
+      'Monter le plus haut possible sur la pointe du pied',
+      'Serrer le mollet 1-2 secondes en haut',
+      'Redescendre lentement, finir la série, puis changer de jambe',
+    ],
+    tips: 'Au bord d\'une marche pour l\'amplitude. Lent et contrôlé, sans rebond. Appuie-toi à un mur pour l\'équilibre.',
+  },
 };
 
 // Mapping nom d'exercice → clé du guide (pour les exercices Firestore qui ont des IDs auto-générés)
@@ -334,6 +374,9 @@ const GUIDE_BY_NAME = {
   'Rotation russe':                       'rotation-russe',
   'Burpees':                              'burpees',
   'Pompes explosives':                    'pompes-explosives',
+  'Fentes bulgares (pied arrière surélevé sur une chaise)': 'fentes-bulgares',
+  'Pont fessier unilatéral (une jambe)':                    'pont-fessier-unilateral',
+  'Mollets une jambe':                                      'mollets-une-jambe',
 };
 
 // Retourne la clé guide pour un exercice (fonctionne avec ID slug ou ID Firestore)

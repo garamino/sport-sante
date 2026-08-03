@@ -19,7 +19,7 @@ import * as libraryView from './views/library.js';
 import * as productsView from './views/products.js';
 import * as nutritionView from './views/nutrition.js';
 import * as hydrationView from './views/hydration.js';
-import { migrateMedsToIntakes } from './migrations.js';
+import { migrateMedsToIntakes, migrateExerciseLevels, migrateWorkoutSnapshots, migrateExtraExercises } from './migrations.js';
 import { seedLibrary } from './migrations/seed-library.js';
 import { seedIntakeProducts } from './migrations/seed-intake-products.js';
 
@@ -51,7 +51,11 @@ onAuth(async (user) => {
     bottomNav.classList.remove('hidden');
     await updateHeader();
     migrateMedsToIntakes().catch(err => console.warn('Migration intakesV1 a échoué :', err));
-    seedLibrary().catch(err => console.warn('Seed library a échoué :', err));
+    seedLibrary()
+      .then(() => migrateExerciseLevels())
+      .then(() => migrateWorkoutSnapshots())
+      .then(() => migrateExtraExercises())
+      .catch(err => console.warn('Seed library / niveaux / snapshots / exercices a échoué :', err));
     seedIntakeProducts().catch(err => console.warn('Seed intake products a échoué :', err));
 
     // Callback OAuth Strava (?code=... dans l'URL)

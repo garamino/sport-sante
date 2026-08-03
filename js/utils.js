@@ -61,6 +61,49 @@ export function showToast(message, duration = 2000) {
   setTimeout(() => toast.classList.remove('show'), duration);
 }
 
+// === Niveaux d'exercice ===
+// Un niveau : { level:<int>, sets:<int>, reps:<int>, rest:<int secondes>, weight:<int kg> }
+
+// Extrait le premier nombre trouvé dans une valeur ; renvoie `def` si aucun.
+export function parseFirstNumber(v, def = 0) {
+  if (typeof v === 'number') return Number.isFinite(v) ? v : def;
+  const m = String(v ?? '').match(/-?\d+(?:[.,]\d+)?/);
+  return m ? Math.round(parseFloat(m[0].replace(',', '.'))) : def;
+}
+
+// Construit un niveau 1 à partir des anciens champs d'un exercice (numérique strict).
+export function buildLevelFromLegacy(ex) {
+  return {
+    level: 1,
+    sets: parseFirstNumber(ex?.defaultSets, 1) || 1,
+    reps: parseFirstNumber(ex?.defaultReps, 0),
+    rest: parseFirstNumber(ex?.defaultRest, 0),
+    weight: parseFirstNumber(ex?.weight, 0),
+  };
+}
+
+// Renvoie le niveau par défaut d'un exercice (repli : 1er niveau, puis champs legacy).
+export function getDefaultLevel(ex) {
+  const levels = Array.isArray(ex?.levels) ? ex.levels : [];
+  if (levels.length) {
+    return levels.find(l => l.level === ex.defaultLevel) || levels[0];
+  }
+  return buildLevelFromLegacy(ex || {});
+}
+
+export function formatSetsReps(level) {
+  if (!level) return '';
+  return `${level.sets} × ${level.reps}`;
+}
+export function formatRest(level) {
+  if (!level || !level.rest) return '—';
+  return `${level.rest}s`;
+}
+export function formatWeight(level) {
+  if (!level || !level.weight) return '';
+  return `${level.weight} kg`;
+}
+
 // Compute hours slept from bedtime & wake time — returns { decimal, hhmm }
 export function computeHoursSlept(bedtime, wakeTime) {
   if (!bedtime || !wakeTime) return { decimal: 0, hhmm: '' };

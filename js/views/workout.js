@@ -1,8 +1,11 @@
-import { today, formatDateFR, addDays, showToast } from '../utils.js';
+import { today, formatDateFR, addDays, showToast, getDefaultLevel, formatSetsReps, formatRest, formatWeight } from '../utils.js';
 import { getWorkout, saveWorkout, getExerciseHistory, getWorkoutTemplates, saveWorkoutTemplate, getWorkoutTemplate, getExercise, getExercises, getAllWorkouts } from '../db.js';
 import { getGuideKey, openExerciseGuide } from '../exercise-guide.js';
 import { importLatestCyclingActivity, importLatestStrengthActivity } from '../strava.js';
 import { startSessionTimer } from '../workout-timer.js';
+
+// Niveau par défaut d'un exercice (affichage séance).
+const _lvl = (ex) => getDefaultLevel(ex);
 
 let currentDate = null;
 let _ws = null; // état mutable des sessions du jour
@@ -224,14 +227,18 @@ async function renderSessionsList(body) {
   for (const s of sessions) {
     if (s.type === 'muscu') {
       try {
-        let tpl = null;
-        let ids = [];
-        if (s.templateId) {
-          tpl = await getWorkoutTemplate(s.templateId);
+        // Le template ne sert plus qu'au libellé/icône. La LISTE d'exercices
+        // vient de la séance elle-même (snapshot figé), sinon des exercices
+        // réalisés, et seulement en dernier recours du template (legacy).
+        const tpl = s.templateId ? await getWorkoutTemplate(s.templateId) : null;
+        let ids;
+        if (Array.isArray(s.exerciseIds)) {
+          ids = [...s.exerciseIds];
+        } else if (Array.isArray(s.exercises) && s.exercises.length) {
+          ids = s.exercises.map(e => e.id).filter(Boolean);
+        } else {
           ids = tpl?.exerciseIds || [];
         }
-        if (Array.isArray(s.exerciseIds)) ids = [...ids, ...s.exerciseIds];
-        ids = [...new Set(ids)];
         const exs = await Promise.all(ids.map(id => getExercise(id)));
         exerciseMap[s.id] = { tpl, exercises: exs.filter(Boolean) };
       } catch {}
@@ -305,7 +312,13 @@ async function renderSessionsList(body) {
 
         const sessionType = type === 'free' ? 'muscu' : type;
         const newSession = { id: sessionId, type: sessionType };
-        if (type === 'muscu') newSession.templateId = templateId;
+        if (type === 'muscu') {
+          newSession.templateId = templateId;
+          // Snapshot : on fige la liste d'exercices du template à la création.
+          // Éditer le template plus tard n'affectera plus cette séance.
+          const tpl = await getWorkoutTemplate(templateId).catch(() => null);
+          newSession.exerciseIds = [...(tpl?.exerciseIds || [])];
+        }
         if (type === 'free') { newSession.name = 'Séance libre'; newSession.exerciseIds = []; }
 
         if (type === 'rest') {
@@ -490,6 +503,14 @@ function muscuFormHTML(session, exercises) {
     const note = saved?.note || '';
     const cardClass = isSkipped ? 'skipped' : (done ? 'done' : '');
 
+    // Valeurs pré-remplies : ce qui a été enregistré pour CETTE séance, sinon le
+    // niveau par défaut de la bibliothèque. (?? pour préserver 0.)
+    const lvl    = _lvl(ex);
+    const sets   = saved?.sets   ?? lvl.sets;
+    const reps   = saved?.reps   ?? lvl.reps;
+    const rest   = saved?.rest   ?? lvl.rest;
+    const weight = saved?.weight ?? lvl.weight;
+
     return `
       <div class="exercise-card ${cardClass}" id="card-${sid}-${i}">
         <div class="exercise-header">
@@ -509,10 +530,12 @@ function muscuFormHTML(session, exercises) {
               </button>
             </div>
             <div class="exercise-details">${ex.notes || ''}</div>
-            <div class="exercise-meta">
-              <span class="exercise-tag">${ex.defaultSets} × ${ex.defaultReps}</span>
-              <span class="exercise-tag">Repos ${ex.defaultRest}</span>
-              ${ex.weight && ex.weight !== '—' ? `<span class="exercise-tag">${ex.weight}</span>` : ''}
+            <div class="session-ex-fields" data-level="${lvl.level}">
+              <span class="session-ex-level" title="Niveau chargé depuis la bibliothèque">Niveau ${lvl.level}</span>
+              <label>Séries<input type="number" inputmode="numeric" min="0" step="1" id="ex-sets-${sid}-${i}" value="${sets}"></label>
+              <label>Reps<input type="number" inputmode="numeric" min="0" step="1" id="ex-reps-${sid}-${i}" value="${reps}"></label>
+              <label>Repos (s)<input type="number" inputmode="numeric" min="0" step="5" id="ex-rest-${sid}-${i}" value="${rest}"></label>
+              <label>Charge (kg)<input type="number" inputmode="decimal" min="0" step="0.5" id="ex-weight-${sid}-${i}" value="${weight}"></label>
             </div>
           </div>
           ${!isSkipped && removable.has(ex.id) ? `<button class="btn-remove-exercise" data-ex-id="${ex.id}" title="Retirer l'exercice" style="background:none;border:none;color:var(--text-secondary);font-size:20px;line-height:1;cursor:pointer;padding:0 4px 0 6px;align-self:flex-start">&times;</button>` : ''}
@@ -575,12 +598,29 @@ function bindSessionEvents(body, session, exercises) {
             caloriesBurned:  parseInt(card.querySelector(`#cardio-kcal-${sid}`)?.value)        || 0,
           };
         } else if (type === 'muscu') {
-          updated.exercises = exercises.map((ex, i) => ({
-            id:   ex.id,
-            name: ex.name,
-            done: card.querySelector(`#ex-done-${sid}-${i}`)?.checked || false,
-            note: card.querySelector(`#ex-note-${sid}-${i}`)?.value   || '',
-          }));
+          const readNum = (sel, def) => {
+            const el = card.querySelector(sel);
+            if (!el) return def;
+            const raw = String(el.value).trim();
+            if (raw === '') return def;
+            const n = Number(raw.replace(',', '.'));
+            return Number.isFinite(n) ? n : def;
+          };
+          updated.exercises = exercises.map((ex, i) => {
+            const lvl = _lvl(ex);
+            return {
+              id:     ex.id,
+              name:   ex.name,
+              done:   card.querySelector(`#ex-done-${sid}-${i}`)?.checked || false,
+              note:   card.querySelector(`#ex-note-${sid}-${i}`)?.value   || '',
+              // Valeurs réalisées pour cette séance (n'affectent pas la bibliothèque)
+              sets:   Math.max(0, Math.round(readNum(`#ex-sets-${sid}-${i}`, lvl.sets))),
+              reps:   Math.max(0, Math.round(readNum(`#ex-reps-${sid}-${i}`, lvl.reps))),
+              rest:   Math.max(0, Math.round(readNum(`#ex-rest-${sid}-${i}`, lvl.rest))),
+              weight: Math.max(0, readNum(`#ex-weight-${sid}-${i}`, lvl.weight)),
+              level:  lvl.level,
+            };
+          });
         }
 
         _ws.sessions[idx] = updated;
@@ -798,12 +838,18 @@ async function openExerciseHistory(exerciseId, exerciseName, date) {
         <h3 style="font-size:16px;margin-bottom:4px">${exerciseName}</h3>
         <p style="font-size:11px;color:var(--text-secondary);margin-bottom:14px;text-transform:uppercase;letter-spacing:0.5px">5 dernières séances</p>
         <div class="history-list">
-          ${history.map(h => `
+          ${history.map(h => {
+            const perf = (h.sets != null && h.reps != null)
+              ? `${h.sets} × ${h.reps}${h.weight ? ` · ${h.weight} kg` : ''}`
+              : '';
+            return `
             <div class="history-item">
               <span class="history-date">${formatDateFR(h.date)}</span>
+              ${perf ? `<span class="history-perf">${perf}</span>` : ''}
               <span class="history-note">${h.note || '—'}</span>
             </div>
-          `).join('')}
+          `;
+          }).join('')}
         </div>
       `;
     }
