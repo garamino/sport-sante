@@ -432,7 +432,11 @@ function bikeFormHTML(session) {
         </div>
         <div class="form-row">
           <div class="form-group"><label>FC moyenne (bpm)</label><input type="number" id="bike-fc-${sid}" placeholder="120" value="${bike.fcAvg || ''}"></div>
+          <div class="form-group"><label>FC max (bpm)</label><input type="number" id="bike-fcmax-${sid}" placeholder="150" value="${bike.fcMax || ''}"></div>
+        </div>
+        <div class="form-row">
           <div class="form-group"><label>Watts moyens</label><input type="number" id="bike-watts-${sid}" placeholder="80" value="${bike.wattsAvg || ''}"></div>
+          <div class="form-group"><label>Cal. dépensées</label><input type="number" id="bike-kcal-${sid}" placeholder="400" value="${bike.caloriesBurned || ''}"></div>
         </div>
         <div class="form-row">
           <div class="form-group"><label>Durée (minutes)</label><input type="number" id="bike-duration-${sid}" placeholder="45" value="${bike.durationMinutes || ''}"></div>
@@ -584,7 +588,9 @@ function bindSessionEvents(body, session, exercises) {
         if (type === 'velo') {
           updated.bikeData = {
             fcAvg:           parseInt(card.querySelector(`#bike-fc-${sid}`)?.value)         || 0,
+            fcMax:           parseInt(card.querySelector(`#bike-fcmax-${sid}`)?.value)      || 0,
             wattsAvg:        parseInt(card.querySelector(`#bike-watts-${sid}`)?.value)      || 0,
+            caloriesBurned:  parseInt(card.querySelector(`#bike-kcal-${sid}`)?.value)       || 0,
             durationMinutes: parseInt(card.querySelector(`#bike-duration-${sid}`)?.value)   || 0,
             distanceKm:      parseFloat(card.querySelector(`#bike-distance-${sid}`)?.value) || 0,
             elevationGain:   parseInt(card.querySelector(`#bike-elevation-${sid}`)?.value)  || 0,
@@ -686,8 +692,10 @@ function bindSessionEvents(body, session, exercises) {
           showToast('Aucune sortie vélo trouvée sur Strava pour cette date');
           return;
         }
-        if (bikeData.fcAvg)           card.querySelector(`#bike-fc-${sid}`).value        = bikeData.fcAvg;
+        if (bikeData.fcAvg)           card.querySelector(`#bike-fc-${sid}`).value         = bikeData.fcAvg;
+        if (bikeData.fcMax)           card.querySelector(`#bike-fcmax-${sid}`).value      = bikeData.fcMax;
         if (bikeData.wattsAvg)        card.querySelector(`#bike-watts-${sid}`).value      = bikeData.wattsAvg;
+        if (bikeData.caloriesBurned)  card.querySelector(`#bike-kcal-${sid}`).value       = bikeData.caloriesBurned;
         if (bikeData.durationMinutes) card.querySelector(`#bike-duration-${sid}`).value   = bikeData.durationMinutes;
         if (bikeData.distanceKm)      card.querySelector(`#bike-distance-${sid}`).value   = bikeData.distanceKm;
         if (bikeData.elevationGain)   card.querySelector(`#bike-elevation-${sid}`).value  = bikeData.elevationGain;

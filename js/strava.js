@@ -92,17 +92,19 @@ async function fetchCalories(activityId, accessToken) {
 }
 
 export async function importLatestCyclingActivity(date) {
-  const { activities } = await fetchDayActivities(date);
+  const { activities, accessToken } = await fetchDayActivities(date);
   const ride = activities.find(a => matchesType(a, 'velo'));
   if (!ride) return null;
 
   return {
     fcAvg: Math.round(ride.average_heartrate || 0),
+    fcMax: Math.round(ride.max_heartrate || 0),
     wattsAvg: Math.round(ride.average_watts || ride.weighted_average_watts || 0),
     durationMinutes: Math.round((ride.moving_time || 0) / 60),
     distanceKm: parseFloat(((ride.distance || 0) / 1000).toFixed(1)),
     elevationGain: Math.round(ride.total_elevation_gain || 0),
     rpm: Math.round(ride.average_cadence || 0),
+    caloriesBurned: await fetchCalories(ride.id, accessToken),
     stravaActivityId: ride.id,
     stravaActivityName: ride.name,
   };
