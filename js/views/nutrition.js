@@ -784,6 +784,9 @@ function _sessionExpenditure(s, weight, age, sex) {
   if (s.type === 'velo' || s.bikeData) {
     const b = s.bikeData || {};
     const dur = b.durationMinutes || 0;
+    // 0. Calories mesurées (Strava/Garmin) — priorité max
+    if (b.caloriesBurned > 0)
+      return { kcal: Math.round(b.caloriesBurned), method: 'mesuré', confident: true };
     // 1. Puissance (Strava) : rendement humain ~24 % × conversion kJ→kcal ÷4.184 ≈ s'annulent → 1 kJ ≈ 1 kcal
     if (b.wattsAvg > 0 && dur > 0)
       return { kcal: Math.round(b.wattsAvg * dur * 60 / 1000), method: 'puissance', confident: true };
