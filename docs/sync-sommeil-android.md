@@ -119,25 +119,35 @@ La 1ʳᵉ fois, **envoie-moi le résultat** : je lis le **JSON réel** reçu dan
 l'app (noms de clés des stades, des constantes, présence ou non du coucher/réveil). Ensuite tout
 tombe automatiquement au bon endroit dans l'onglet Sommeil.
 
-### Format attendu (indicatif, à confirmer au calage)
+### Format réel (calé sur l'app v1.9.20)
+
+Format **plat**, heures en **UTC**, stades en **minuscules** :
 
 ```json
 {
-  "messages": [
+  "sleep": [
     {
-      "date": "2026-09-14",
-      "sleep": {
-        "total_duration_minutes": 420,
-        "sleep_stages": { "Deep sleep": 90, "Light sleep": 195, "REM sleep": 105, "Awake": 30 }
-      }
+      "session_end_time": "2026-09-14T07:00:00Z",
+      "duration_seconds": 27000,
+      "stages": [
+        { "stage": "deep",  "start_time": "…T00:00:00Z", "duration_seconds": 7200 },
+        { "stage": "rem",   "start_time": "…T02:00:00Z", "duration_seconds": 12600 },
+        { "stage": "light", "start_time": "…T05:30:00Z", "duration_seconds": 5400 }
+      ]
     }
-  ]
+  ],
+  "heart_rate": [ { "bpm": 58, "time": "2026-09-14T06:20:00Z" } ]
 }
 ```
 
-Le webhook calcule `hoursSlept = total − Awake` (l'éveil ne compte pas comme du sommeil), stocke les
-stades, et rattache FC repos / HRV / SpO2 / respiration s'ils sont présents. Il traite **toutes** les
-nuits reçues → si l'app envoie plusieurs jours, tes nuits manquantes se remplissent d'un coup.
+Le webhook convertit UTC→heure locale (`?tz=Europe/Paris`), calcule `hoursSlept` = **somme des
+stades hors éveil**, `awakeMinutes` = reste, déduit la **FC de repos** = min des bpm pendant la nuit,
+et rattache HRV / SpO2 / respiration **si** l'app les envoie. Il traite **toutes** les nuits reçues
+→ si l'app envoie plusieurs jours, tes nuits manquantes se remplissent d'un coup.
+
+> Note : le bouton **Test Webhook** envoie des **données de démonstration** (une Pixel Watch fictive),
+> pas ta vraie nuit — c'est normal, ça sert juste à valider le tuyau. Le **Sync Now** (données réelles)
+> enverra tes vraies nuits Fitbit.
 
 Réponse du webhook : `200 {ok:true, written:["2026-09-14", …], count:N}`.
 

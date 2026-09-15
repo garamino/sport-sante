@@ -981,10 +981,24 @@ exports.sleepIngest = onRequest(
 );
 
 // ========== SYNC SOMMEIL — WEBHOOK app "health-connect-webhook" (mcnaveen) ==========
-// Parse le format `messages[]` de l'app Android (stades en minutes, date fournie).
-// Auth Bearer (en-tête Authorization) ou ?token= ; uid via ?uid= ou body.
-// Log le corps brut (tronqué) pour caler le parseur sur le schéma réel de l'app.
-// Tolérant : clés de constantes (FC/HRV/SpO2/resp) tentées à plusieurs endroits.
+// Schéma réel (v1.9.20) : format plat, heures UTC ISO, stades en minuscules.
+//   { sleep:[{ session_end_time, duration_seconds, stages:[{stage,start_time,end_time,duration_seconds}] }],
+//     heart_rate:[{bpm,time}], heart_rate_variability?, oxygen_saturation?, respiratory_rate?, steps:[...] }
+// Auth Bearer (en-tête) ou ?token= ; uid via ?uid= ou body ; ?tz= (défaut Europe/Paris).
+// hoursSlept = somme des stades non-éveil (le temps hors sommeil compte comme éveil).
+// FC de repos = min des bpm mesurés pendant la fenêtre de sommeil (pas de champ dédié).
+
+const HC_AWAKE_STAGES = new Set(["awake", "awake_in_bed", "out_of_bed"]);
+
+// Instant ISO (UTC) -> { date:'YYYY-MM-DD', hhmm:'HH:MM' } dans le fuseau tz.
+function toLocalParts(iso, tz) {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: tz, year: "numeric", month: "2-digit", day: "2-digit",
+    hour: "2-digit", minute: "2-digit", hour12: false,
+  }).formatToParts(new Date(iso)).reduce((a, p) => (a[p.type] = p.value, a), {});
+  const hh = parts.hour === "24" ? "00" : parts.hour;
+  return { date: `${parts.year}-${parts.month}-${parts.day}`, hhmm: `${hh}:${parts.minute}` };
+}
 
 exports.hcWebhook = onRequest(
   { maxInstances: 3, timeoutSeconds: 30, region: "europe-west1", cors: true, invoker: "public" },
@@ -998,48 +1012,59 @@ exports.hcWebhook = onRequest(
       const authHeader = req.get("authorization") || "";
       const token = (authHeader.startsWith("Bearer ") ? authHeader.slice(7).trim() : "")
         || req.query.token || body.secret;
+      const tz = req.query.tz || "Europe/Paris";
 
-      // Log de calage : on veut voir le schéma réel envoyé par l'app.
-      try { console.log("hcWebhook payload:", JSON.stringify(body).slice(0, 6000)); } catch (_) {}
+      try { console.log("hcWebhook payload:", JSON.stringify(body).slice(0, 4000)); } catch (_) {}
 
       if (!uid || !token) { res.status(401).json({ error: "unauthorized" }); return; }
       const cfgSnap = await db.doc(`users/${uid}/settings/sleepSync`).get();
       const stored = cfgSnap.exists ? cfgSnap.data().token : null;
       if (!stored || !timingSafeEqual(token, stored)) { res.status(401).json({ error: "unauthorized" }); return; }
 
-      const num = (v) => {
-        if (typeof v === "number" && isFinite(v)) return v;
-        if (typeof v === "string" && v.trim() !== "" && !isNaN(Number(v))) return Number(v);
-        return null;
+      const ms = (iso) => { const t = new Date(iso).getTime(); return isNaN(t) ? null : t; };
+      const sleepArr = Array.isArray(body.sleep) ? body.sleep : [];
+      const hrArr = Array.isArray(body.heart_rate) ? body.heart_rate : [];
+      const hrvArr = Array.isArray(body.heart_rate_variability) ? body.heart_rate_variability : [];
+      const spo2Arr = Array.isArray(body.oxygen_saturation) ? body.oxygen_saturation : [];
+      const respArr = Array.isArray(body.respiratory_rate) ? body.respiratory_rate : [];
+
+      // Dernière valeur d'un tableau {time, [key]} dans la fenêtre [a,b].
+      const lastInWindow = (arr, key, a, b) => {
+        let v = null;
+        for (const x of arr) {
+          const t = x && x.time ? ms(x.time) : null;
+          if (t != null && t >= a && t <= b && typeof x[key] === "number" && isFinite(x[key])) v = x[key];
+        }
+        return v;
       };
-      const messages = Array.isArray(body.messages) ? body.messages
-        : Array.isArray(body) ? body : [];
 
       const written = [];
-      for (const msg of messages.slice(0, 90)) {
-        const date = msg && typeof msg.date === "string" && DATE_RE.test(msg.date) ? msg.date : null;
-        const sleep = msg && msg.sleep;
-        if (!date || !sleep || typeof sleep !== "object") continue;
+      for (const s of sleepArr.slice(0, 90)) {
+        const endMs = s && s.session_end_time ? ms(s.session_end_time) : null;
+        const dur = Number(s && s.duration_seconds) || 0;
+        if (endMs == null || dur < 3 * 3600) continue; // ignore siestes / sessions courtes
 
-        // Stades en minutes — clés de type "Deep sleep"/"Light sleep"/"REM sleep"/"Awake".
-        const stagesRaw = sleep.sleep_stages || sleep.stages || {};
-        const stageMin = (needle) => {
-          for (const k of Object.keys(stagesRaw)) {
-            if (k.toLowerCase().includes(needle)) { const v = num(stagesRaw[k]); if (v != null) return v; }
-          }
-          return null;
-        };
-        const deep = stageMin("deep");
-        const light = stageMin("light");
-        const rem = stageMin("rem");
-        const awake = stageMin("awake");
-        let total = num(sleep.total_duration_minutes);
-        if (total == null) {
-          const sum = [deep, light, rem, awake].reduce((a, b) => a + (b || 0), 0);
-          total = sum > 0 ? sum : null;
+        const stages = Array.isArray(s.stages) ? s.stages : [];
+        let startMs = endMs - dur * 1000;
+        for (const st of stages) { const t = ms(st.start_time); if (t != null && t < startMs) startMs = t; }
+
+        let deepS = 0, lightS = 0, remS = 0, asleepS = 0;
+        for (const st of stages) {
+          const d = Number(st.duration_seconds) || 0;
+          const name = String(st.stage || "").toLowerCase();
+          if (HC_AWAKE_STAGES.has(name)) continue;
+          asleepS += d;
+          if (name === "deep") deepS += d;
+          else if (name === "light") lightS += d;
+          else if (name === "rem") remS += d;
         }
-        if (total == null) continue;
-        const asleep = Math.max(0, total - (awake || 0));
+        if (stages.length === 0) asleepS = dur;
+        const awakeS = Math.max(0, dur - asleepS);
+        const asleepMin = Math.round(asleepS / 60);
+
+        const bed = toLocalParts(new Date(startMs).toISOString(), tz);
+        const wake = toLocalParts(new Date(endMs).toISOString(), tz);
+        const date = wake.date;
 
         const sleepRef = db.doc(`users/${uid}/sleep/${date}`);
         const snap = await sleepRef.get();
@@ -1048,30 +1073,29 @@ exports.hcWebhook = onRequest(
 
         const update = {
           date,
-          hoursSlept: Math.round((asleep / 60) * 10) / 10,
-          hoursSleptHHMM: `${String(Math.floor(asleep / 60)).padStart(2, "0")}:${String(Math.round(asleep % 60)).padStart(2, "0")}`,
+          bedtime: bed.hhmm,
+          wakeTime: wake.hhmm,
+          hoursSlept: Math.round((asleepS / 3600) * 10) / 10,
+          hoursSleptHHMM: `${String(Math.floor(asleepMin / 60)).padStart(2, "0")}:${String(asleepMin % 60).padStart(2, "0")}`,
+          awakeMinutes: Math.round(awakeS / 60),
           autoImported: true,
           autoSource: "hc-webhook",
           autoImportedAt: FieldValue.serverTimestamp(),
         };
-        if (deep != null) update.deepMinutes = Math.round(deep);
-        if (light != null) update.lightMinutes = Math.round(light);
-        if (rem != null) update.remMinutes = Math.round(rem);
-        if (awake != null) update.awakeMinutes = Math.round(awake);
+        if (deepS) update.deepMinutes = Math.round(deepS / 60);
+        if (lightS) update.lightMinutes = Math.round(lightS / 60);
+        if (remS) update.remMinutes = Math.round(remS / 60);
 
-        // Coucher / réveil si l'app les fournit (clés incertaines — best effort, HH:MM).
-        const bt = sleep.bedtime || sleep.start_time_local || sleep.start;
-        const wt = sleep.wake_time || sleep.wakeTime || sleep.end_time_local || sleep.end;
-        if (typeof bt === "string" && TIME_RE.test(bt)) update.bedtime = bt;
-        if (typeof wt === "string" && TIME_RE.test(wt)) update.wakeTime = wt;
+        // FC de repos = minimum des bpm mesurés pendant la nuit.
+        const hrInWin = hrArr
+          .filter(x => x && x.time && typeof x.bpm === "number" && ms(x.time) != null && ms(x.time) >= startMs && ms(x.time) <= endMs)
+          .map(x => x.bpm);
+        if (hrInWin.length) update.restingHeartRate = Math.round(Math.min(...hrInWin));
 
-        // Constantes vitales si présentes (clés incertaines — best effort).
-        const pick = (...cands) => { for (const c of cands) { const v = num(c); if (v != null) return v; } return null; };
-        const rhr = pick(msg.resting_heart_rate?.bpm, msg.resting_heart_rate?.avg_bpm, msg.resting_heart_rate);
-        const hrv = pick(msg.hrv?.rmssd, msg.heart_rate_variability?.rmssd_millis, msg.heart_rate_variability?.rmssd, msg.hrv);
-        const spo2 = pick(msg.oxygen_saturation?.percentage, msg.oxygen_saturation?.avg, msg.spo2?.avg, msg.spo2);
-        const resp = pick(msg.respiratory_rate?.rate, msg.respiratory_rate?.avg, msg.respiratory_rate);
-        if (rhr != null) update.restingHeartRate = Math.round(rhr);
+        // HRV / SpO2 / resp si l'app les envoie (formats ya-breeze), dernière valeur de la nuit.
+        const hrv = lastInWindow(hrvArr, "rmssd_millis", startMs, endMs);
+        const spo2 = lastInWindow(spo2Arr, "percentage", startMs, endMs);
+        const resp = lastInWindow(respArr, "rate", startMs, endMs);
         if (hrv != null) update.hrv = Math.round(hrv * 10) / 10;
         if (spo2 != null) update.spo2 = Math.round(spo2 * 10) / 10;
         if (resp != null) update.respiratoryRate = Math.round(resp * 10) / 10;
