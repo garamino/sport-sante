@@ -875,14 +875,14 @@ function decimalToHHMM(dec) {
   return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
 }
 
-// Durée entre coucher et réveil (gère le passage minuit) -> décimal + HH:MM
+// Durée entre coucher et réveil (gère le passage minuit) -> décimal + HH:MM exact
 function durationFromTimes(bedtime, wakeTime) {
   const [bh, bm] = bedtime.split(":").map(Number);
   const [wh, wm] = wakeTime.split(":").map(Number);
   let mins = (wh * 60 + wm) - (bh * 60 + bm);
   if (mins <= 0) mins += 24 * 60; // couché la veille au soir
-  const dec = Math.round((mins / 60) * 10) / 10;
-  return { hoursSlept: dec, hoursSleptHHMM: decimalToHHMM(dec) };
+  const hhmm = `${String(Math.floor(mins / 60)).padStart(2, "0")}:${String(mins % 60).padStart(2, "0")}`;
+  return { hoursSlept: Math.round((mins / 60) * 10) / 10, hoursSleptHHMM: hhmm };
 }
 
 exports.sleepIngest = onRequest(
