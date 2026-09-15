@@ -1,4 +1,5 @@
-const { onCall, HttpsError } = require("firebase-functions/v2/https");
+const { onCall, onRequest, HttpsError } = require("firebase-functions/v2/https");
+const crypto = require("crypto");
 const { initializeApp } = require("firebase-admin/app");
 const { getFirestore, FieldValue } = require("firebase-admin/firestore");
 
@@ -848,5 +849,111 @@ exports.stravaRefresh = onCall(
     });
 
     return { accessToken: tokens.access_token, expiresAt: tokens.expires_at };
+  }
+);
+
+// ========== SYNC SOMMEIL — WEBHOOK (Google Health / Health Connect via Tasker) ==========
+// Reçoit une nuit mesurée depuis le téléphone et l'écrit dans users/{uid}/sleep/{date}.
+// Auth par jeton partagé stocké dans users/{uid}/settings/sleepSync.token.
+// Ne remplace JAMAIS une nuit saisie manuellement : ne remplit que les nuits
+// absentes ou déjà auto-importées (préserve note + qualité manuelle).
+
+const TIME_RE = /^([01]\d|2[0-3]):([0-5]\d)$/;   // HH:MM
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;            // YYYY-MM-DD
+
+function timingSafeEqual(a, b) {
+  const ba = Buffer.from(String(a));
+  const bb = Buffer.from(String(b));
+  if (ba.length !== bb.length) return false;
+  return crypto.timingSafeEqual(ba, bb);
+}
+
+// Décimal (ex 8.02) -> "HH:MM" (heures dormies)
+function decimalToHHMM(dec) {
+  const h = Math.floor(dec);
+  const m = Math.round((dec - h) * 60);
+  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+}
+
+// Durée entre coucher et réveil (gère le passage minuit) -> décimal + HH:MM
+function durationFromTimes(bedtime, wakeTime) {
+  const [bh, bm] = bedtime.split(":").map(Number);
+  const [wh, wm] = wakeTime.split(":").map(Number);
+  let mins = (wh * 60 + wm) - (bh * 60 + bm);
+  if (mins <= 0) mins += 24 * 60; // couché la veille au soir
+  const dec = Math.round((mins / 60) * 10) / 10;
+  return { hoursSlept: dec, hoursSleptHHMM: decimalToHHMM(dec) };
+}
+
+exports.sleepIngest = onRequest(
+  { maxInstances: 3, timeoutSeconds: 20, region: "europe-west1", cors: true, invoker: "public" },
+  async (req, res) => {
+    if (req.method === "OPTIONS") { res.status(204).send(""); return; }
+    if (req.method !== "POST") { res.status(405).json({ error: "method_not_allowed" }); return; }
+
+    try {
+      const body = typeof req.body === "string" ? JSON.parse(req.body || "{}") : (req.body || {});
+      // Le jeton peut arriver dans le corps (secret) ou l'en-tête Authorization: Bearer <token>
+      const authHeader = req.get("authorization") || "";
+      const bearer = authHeader.startsWith("Bearer ") ? authHeader.slice(7).trim() : "";
+      const { uid, date, bedtime, wakeTime } = body;
+      const secret = body.secret || bearer;
+      const hoursSleptIn = body.hoursSlept;
+      const sleepScore = body.sleepScore;
+
+      if (!uid || !secret) { res.status(401).json({ error: "unauthorized" }); return; }
+      if (!DATE_RE.test(date || "")) { res.status(400).json({ error: "bad_date" }); return; }
+      if (!TIME_RE.test(bedtime || "") || !TIME_RE.test(wakeTime || "")) {
+        res.status(400).json({ error: "bad_time" }); return;
+      }
+
+      const cfgSnap = await db.doc(`users/${uid}/settings/sleepSync`).get();
+      const token = cfgSnap.exists ? cfgSnap.data().token : null;
+      if (!token || !timingSafeEqual(secret, token)) {
+        res.status(401).json({ error: "unauthorized" }); return;
+      }
+
+      // Heures dormies : valeur fournie sinon calcul coucher→réveil
+      let hoursSlept, hoursSleptHHMM;
+      if (typeof hoursSleptIn === "number" && hoursSleptIn > 0) {
+        hoursSlept = Math.round(hoursSleptIn * 10) / 10;
+        hoursSleptHHMM = decimalToHHMM(hoursSlept);
+      } else {
+        ({ hoursSlept, hoursSleptHHMM } = durationFromTimes(bedtime, wakeTime));
+      }
+
+      const sleepRef = db.doc(`users/${uid}/sleep/${date}`);
+      const existingSnap = await sleepRef.get();
+      const existing = existingSnap.exists ? existingSnap.data() : null;
+
+      // Nuit saisie manuellement (pas auto-importée) → on ne touche à rien.
+      if (existing && !existing.autoImported) {
+        res.status(200).json({ ok: true, skipped: "manual" }); return;
+      }
+
+      const update = {
+        date,
+        bedtime,
+        wakeTime,
+        hoursSlept,
+        hoursSleptHHMM,
+        autoImported: true,
+        autoSource: body.source || "google-health",
+        autoImportedAt: FieldValue.serverTimestamp(),
+      };
+
+      // Qualité : suggestion depuis le Sleep Score (0-100 → 1-10), seulement si absente.
+      if ((existing == null || existing.quality == null) &&
+          typeof sleepScore === "number" && sleepScore > 0) {
+        update.quality = Math.min(10, Math.max(1, Math.round(sleepScore / 10)));
+        update.qualityAuto = true;
+      }
+
+      await sleepRef.set(update, { merge: true });
+      res.status(200).json({ ok: true, date, hoursSleptHHMM });
+    } catch (e) {
+      console.error("sleepIngest error", e);
+      res.status(500).json({ error: "internal" });
+    }
   }
 );

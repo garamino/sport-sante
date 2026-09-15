@@ -1,7 +1,7 @@
 import { onAuth, logout, getCurrentUser } from './auth.js';
 import { registerRoute, initRouter, navigateTo } from './router.js';
 import { updateHeader } from './components/nav.js';
-import { getUserProfile, saveApiKey, getCoachWindow, saveCoachWindow, getStravaCredentials, saveStravaCredentials, getStravaTokens, clearStravaTokens } from './db.js';
+import { getUserProfile, saveApiKey, getCoachWindow, saveCoachWindow, getStravaCredentials, saveStravaCredentials, getStravaTokens, clearStravaTokens, getSleepSyncConfig, ensureSleepSyncToken } from './db.js';
 import { showToast, today, addDays } from './utils.js';
 import { buildStravaAuthUrl, exchangeStravaCode } from './strava.js';
 import { buildMarkdownExport } from './export.js';
@@ -95,12 +95,15 @@ settingsBtn.addEventListener('click', async () => {
   document.querySelector('.settings-modal-overlay')?.remove();
 
   const user = getCurrentUser();
-  const [profile, coachWindow, stravaCreds, stravaTokens] = await Promise.all([
+  const [profile, coachWindow, stravaCreds, stravaTokens, sleepSyncCfg] = await Promise.all([
     getUserProfile().catch(() => null),
     getCoachWindow().catch(() => 7),
     getStravaCredentials().catch(() => null),
     getStravaTokens().catch(() => null),
+    getSleepSyncConfig().catch(() => null),
   ]);
+  const SLEEP_SYNC_URL = 'https://europe-west1-sport-467df.cloudfunctions.net/sleepIngest';
+  const sleepSyncOn = !!sleepSyncCfg?.token;
   const hasKey = profile?.hasApiKey || false;
   const stravaConfigured = !!(stravaCreds?.clientId && stravaCreds?.clientSecret);
   const stravaConnected = !!(stravaTokens?.accessToken);
@@ -187,6 +190,27 @@ settingsBtn.addEventListener('click', async () => {
       </div>
 
       <div class="settings-section">
+        <div class="settings-label">Sync sommeil (Google Health)</div>
+        <p style="font-size:12px;color:var(--text-secondary);margin:4px 0 10px">
+          Remplit automatiquement tes nuits depuis Health Connect (Fitbit) via une appli d'automatisation Android (Tasker / Macrodroid). Active la sync, puis copie ces valeurs dans l'appli.
+        </p>
+        ${sleepSyncOn ? `
+          <div class="settings-status settings-status-ok">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>
+            Sync activée
+          </div>
+          <div id="sleep-sync-details" style="margin-top:10px"></div>
+          <button class="btn btn-small" id="sleep-sync-regen" style="margin-top:8px;width:100%;background:none;border:1px solid var(--danger);color:var(--danger)">
+            Régénérer le jeton
+          </button>
+        ` : `
+          <button class="btn btn-primary btn-small" id="sleep-sync-enable" style="width:100%">
+            Activer la sync sommeil
+          </button>
+        `}
+      </div>
+
+      <div class="settings-section">
         <div class="settings-label">Export pour analyse IA</div>
         <p style="font-size:12px;color:var(--text-secondary);margin:4px 0 10px">
           Génère un résumé Markdown (entraînements, nutrition, hydratation, sommeil) sur une période, à coller dans une IA pour obtenir des conseils.
@@ -218,6 +242,64 @@ settingsBtn.addEventListener('click', async () => {
   const close = () => overlay.remove();
   overlay.querySelector('.guide-modal-close').addEventListener('click', close);
   overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
+
+  // === Sync sommeil ===
+  const copyToClipboard = async (text, label) => {
+    try { await navigator.clipboard.writeText(text); showToast(`${label} copié ✓`); }
+    catch { showToast('Copie impossible — sélectionne à la main'); }
+  };
+  const fieldRow = (label, value, key) => `
+    <div style="margin-bottom:8px">
+      <div style="font-size:11px;color:var(--text-secondary)">${label}</div>
+      <div style="display:flex;gap:6px;align-items:center">
+        <code style="flex:1;font-size:11px;background:var(--bg-primary);padding:6px 8px;border-radius:4px;word-break:break-all">${value}</code>
+        <button class="btn btn-small sleep-sync-copy" data-copy="${encodeURIComponent(value)}" data-label="${label}" style="flex:0 0 auto;padding:6px 10px">Copier</button>
+      </div>
+    </div>`;
+  const renderSleepSyncDetails = (uid, token) => {
+    const el = document.getElementById('sleep-sync-details');
+    if (!el) return;
+    el.innerHTML =
+      fieldRow('URL du webhook', SLEEP_SYNC_URL, 'url') +
+      fieldRow('uid', uid, 'uid') +
+      fieldRow('Jeton (secret)', token, 'token') +
+      `<p style="font-size:11px;color:var(--text-secondary);margin-top:6px">
+        Colle ces valeurs dans ton appli d'automatisation Android (voir le guide fourni). Le jeton est secret — ne le partage pas.
+      </p>`;
+    el.querySelectorAll('.sleep-sync-copy').forEach(b => b.addEventListener('click', () => {
+      copyToClipboard(decodeURIComponent(b.dataset.copy), b.dataset.label);
+    }));
+  };
+  if (sleepSyncOn) renderSleepSyncDetails(user.uid, sleepSyncCfg.token);
+
+  document.getElementById('sleep-sync-enable')?.addEventListener('click', async (e) => {
+    e.target.disabled = true;
+    e.target.textContent = 'Activation…';
+    try {
+      await ensureSleepSyncToken(false);
+      showToast('Sync sommeil activée ✓');
+      close();
+      settingsBtn.click(); // ré-ouvre la modale à jour (état « activée »)
+    } catch {
+      showToast('Erreur — réessaie');
+      e.target.disabled = false;
+      e.target.textContent = 'Activer la sync sommeil';
+    }
+  });
+
+  document.getElementById('sleep-sync-regen')?.addEventListener('click', async (e) => {
+    if (!confirm('Régénérer le jeton invalidera l\'ancien. Il faudra le recoller dans ton appli Android. Continuer ?')) return;
+    e.target.disabled = true;
+    try {
+      const { uid, token } = await ensureSleepSyncToken(true);
+      showToast('Nouveau jeton généré ✓');
+      renderSleepSyncDetails(uid, token);
+    } catch {
+      showToast('Erreur — réessaie');
+    } finally {
+      e.target.disabled = false;
+    }
+  });
 
   document.getElementById('settings-save-key').addEventListener('click', async (e) => {
     const btn = e.target;

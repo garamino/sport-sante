@@ -289,6 +289,23 @@ export async function clearStravaTokens() {
   await deleteDoc(userDoc('settings/strava'));
 }
 
+// === Sync Sommeil (Google Health / Health Connect via webhook) ===
+export async function getSleepSyncConfig() {
+  const snap = await getDoc(userDoc('settings/sleepSync'));
+  return snap.exists() ? snap.data() : null;
+}
+
+// Génère (ou régénère) un jeton partagé et le stocke. Renvoie { uid, token }.
+export async function ensureSleepSyncToken(regenerate = false) {
+  const existing = await getSleepSyncConfig();
+  if (existing?.token && !regenerate) return { uid: getUid(), token: existing.token };
+  const bytes = new Uint8Array(24);
+  crypto.getRandomValues(bytes);
+  const token = Array.from(bytes, b => b.toString(16).padStart(2, '0')).join('');
+  await setDoc(userDoc('settings/sleepSync'), { token, updatedAt: Timestamp.now() });
+  return { uid: getUid(), token };
+}
+
 // === Nutrition ===
 export async function getNutrition(date) {
   const snap = await getDoc(userDoc(`nutrition/${date}`));
