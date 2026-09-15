@@ -1080,36 +1080,48 @@ exports.hcWebhook = onRequest(
         const sleepRef = db.doc(`users/${uid}/sleep/${date}`);
         const snap = await sleepRef.get();
         const existing = snap.exists ? snap.data() : null;
-        if (existing && !existing.autoImported) continue; // nuit manuelle : préservée
 
-        const update = {
-          date,
-          bedtime: bed.hhmm,
-          wakeTime: wake.hhmm,
-          hoursSlept: Math.round((asleepS / 3600) * 10) / 10,
-          hoursSleptHHMM: `${String(Math.floor(asleepMin / 60)).padStart(2, "0")}:${String(asleepMin % 60).padStart(2, "0")}`,
-          awakeMinutes: Math.round(awakeS / 60),
-          autoImported: true,
-          autoSource: "hc-webhook",
-          autoImportedAt: FieldValue.serverTimestamp(),
-        };
-        if (deepS) update.deepMinutes = Math.round(deepS / 60);
-        if (lightS) update.lightMinutes = Math.round(lightS / 60);
-        if (remS) update.remMinutes = Math.round(remS / 60);
+        // Champs "Health" seuls (mesurés) — jamais les valeurs humaines.
+        const health = { awakeMinutes: Math.round(awakeS / 60) };
+        if (deepS) health.deepMinutes = Math.round(deepS / 60);
+        if (lightS) health.lightMinutes = Math.round(lightS / 60);
+        if (remS) health.remMinutes = Math.round(remS / 60);
 
         // FC de repos = minimum des bpm mesurés pendant la nuit.
         const hrInWin = hrArr
           .filter(x => x && x.time && typeof x.bpm === "number" && ms(x.time) != null && ms(x.time) >= startMs && ms(x.time) <= endMs)
           .map(x => x.bpm);
-        if (hrInWin.length) update.restingHeartRate = Math.round(Math.min(...hrInWin));
+        if (hrInWin.length) health.restingHeartRate = Math.round(Math.min(...hrInWin));
 
-        // HRV / SpO2 / resp si l'app les envoie (formats ya-breeze), dernière valeur de la nuit.
+        // HRV / SpO2 / resp si l'app les envoie, dernière valeur de la nuit.
         const hrv = lastInWindow(hrvArr, "rmssd_millis", startMs, endMs);
         const spo2 = lastInWindow(spo2Arr, "percentage", startMs, endMs);
         const resp = lastInWindow(respArr, "rate", startMs, endMs);
-        if (hrv != null) update.hrv = Math.round(hrv * 10) / 10;
-        if (spo2 != null) update.spo2 = Math.round(spo2 * 10) / 10;
-        if (resp != null) update.respiratoryRate = Math.round(resp * 10) / 10;
+        if (hrv != null) health.hrv = Math.round(hrv * 10) / 10;
+        if (spo2 != null) health.spo2 = Math.round(spo2 * 10) / 10;
+        if (resp != null) health.respiratoryRate = Math.round(resp * 10) / 10;
+
+        if (existing && !existing.autoImported) {
+          // Nuit saisie à la main : on ENRICHIT seulement avec les données Health,
+          // sans toucher coucher/réveil/heures/qualité/note ni le statut manuel.
+          await sleepRef.set({ ...health, healthImportedAt: FieldValue.serverTimestamp() }, { merge: true });
+          written.push(date);
+          continue;
+        }
+
+        // Nuit absente ou déjà auto-importée : mise à jour complète.
+        const asleepH = Math.round((asleepS / 3600) * 10) / 10;
+        const update = {
+          date,
+          bedtime: bed.hhmm,
+          wakeTime: wake.hhmm,
+          hoursSlept: asleepH,
+          hoursSleptHHMM: `${String(Math.floor(asleepMin / 60)).padStart(2, "0")}:${String(asleepMin % 60).padStart(2, "0")}`,
+          ...health,
+          autoImported: true,
+          autoSource: "hc-webhook",
+          autoImportedAt: FieldValue.serverTimestamp(),
+        };
 
         await sleepRef.set(update, { merge: true });
         written.push(date);
