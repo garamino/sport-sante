@@ -988,7 +988,17 @@ exports.sleepIngest = onRequest(
 // hoursSlept = somme des stades non-éveil (le temps hors sommeil compte comme éveil).
 // FC de repos = min des bpm mesurés pendant la fenêtre de sommeil (pas de champ dédié).
 
-const HC_AWAKE_STAGES = new Set(["awake", "awake_in_bed", "out_of_bed"]);
+// Stades Health Connect : soit codes numériques (1=éveil, 2=sommeil, 3=hors-lit,
+// 4=léger, 5=profond, 6=REM, 7=éveil-au-lit, 0=inconnu), soit chaînes (deep/light/rem…
+// pour les données de démo). Renvoie 'deep' | 'light' | 'rem' | 'sleeping' | 'awake'.
+function classifySleepStage(raw) {
+  const s = String(raw == null ? "" : raw).toLowerCase();
+  if (s === "5" || s === "deep") return "deep";
+  if (s === "4" || s === "light") return "light";
+  if (s === "6" || s === "rem") return "rem";
+  if (s === "2" || s === "sleeping" || s === "asleep") return "sleeping";
+  return "awake"; // 1/3/7/0/awake/out_of_bed/awake_in_bed/inconnu → non-sommeil
+}
 
 // Instant ISO (UTC) -> { date:'YYYY-MM-DD', hhmm:'HH:MM' } dans le fuseau tz.
 function toLocalParts(iso, tz) {
@@ -1051,12 +1061,13 @@ exports.hcWebhook = onRequest(
         let deepS = 0, lightS = 0, remS = 0, asleepS = 0;
         for (const st of stages) {
           const d = Number(st.duration_seconds) || 0;
-          const name = String(st.stage || "").toLowerCase();
-          if (HC_AWAKE_STAGES.has(name)) continue;
-          asleepS += d;
-          if (name === "deep") deepS += d;
-          else if (name === "light") lightS += d;
-          else if (name === "rem") remS += d;
+          switch (classifySleepStage(st.stage)) {
+            case "deep": deepS += d; asleepS += d; break;
+            case "light": lightS += d; asleepS += d; break;
+            case "rem": remS += d; asleepS += d; break;
+            case "sleeping": asleepS += d; break; // sommeil sans détail de stade
+            default: break; // éveil → compté via (durée − sommeil)
+          }
         }
         if (stages.length === 0) asleepS = dur;
         const awakeS = Math.max(0, dur - asleepS);
