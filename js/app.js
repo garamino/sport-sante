@@ -103,6 +103,7 @@ settingsBtn.addEventListener('click', async () => {
     getSleepSyncConfig().catch(() => null),
   ]);
   const SLEEP_SYNC_URL = 'https://europe-west1-sport-467df.cloudfunctions.net/sleepIngest';
+  const HC_WEBHOOK_URL = 'https://europe-west1-sport-467df.cloudfunctions.net/hcWebhook';
   const sleepSyncOn = !!sleepSyncCfg?.token;
   const hasKey = profile?.hasApiKey || false;
   const stravaConfigured = !!(stravaCreds?.clientId && stravaCreds?.clientSecret);
@@ -259,13 +260,23 @@ settingsBtn.addEventListener('click', async () => {
   const renderSleepSyncDetails = (uid, token) => {
     const el = document.getElementById('sleep-sync-details');
     if (!el) return;
+    const appUrl = `${HC_WEBHOOK_URL}?uid=${encodeURIComponent(uid)}`;
     el.innerHTML =
-      fieldRow('URL du webhook', SLEEP_SYNC_URL, 'url') +
-      fieldRow('uid', uid, 'uid') +
-      fieldRow('Jeton (secret)', token, 'token') +
-      `<p style="font-size:11px;color:var(--text-secondary);margin-top:6px">
-        Colle ces valeurs dans ton appli d'automatisation Android (voir le guide fourni). Le jeton est secret — ne le partage pas.
-      </p>`;
+      `<p style="font-size:12px;color:var(--text-primary);margin:0 0 6px;font-weight:600">
+        À coller dans l'app « Health Connect Webhook »
+      </p>` +
+      fieldRow('Webhook URL', appUrl, 'appurl') +
+      fieldRow('Bearer token (Auth)', token, 'token') +
+      `<p style="font-size:11px;color:var(--text-secondary);margin:2px 0 10px">
+        Dans l'app : colle l'URL dans le champ Webhook, et le jeton dans le champ « Bearer token / Auth ». Garde le jeton secret.
+      </p>
+      <details style="font-size:11px;color:var(--text-secondary)">
+        <summary style="cursor:pointer">Test manuel sans l'app (curl)</summary>
+        <div style="margin-top:8px">
+          ${fieldRow('URL de test (sleepIngest)', SLEEP_SYNC_URL, 'url')}
+          ${fieldRow('uid', uid, 'uid')}
+        </div>
+      </details>`;
     el.querySelectorAll('.sleep-sync-copy').forEach(b => b.addEventListener('click', () => {
       copyToClipboard(decodeURIComponent(b.dataset.copy), b.dataset.label);
     }));

@@ -87,63 +87,69 @@ Ouvre l'onglet **Sommeil** à cette date → la nuit doit apparaître. ✅
 
 ---
 
-## 3. Automatisation Android
+## 3. L'app Android : Health Connect Webhook (mcnaveen)
 
-> Les noms exacts d'écrans/variables changent selon la version de l'appli et de Health Connect.
-> La logique ci-dessous est la référence ; adapte les libellés. En cas de doute, envoie-moi une
-> capture de l'action « Health Connect » et je te donne les noms précis.
+Pas besoin de Tasker/Macrodroid (Macrodroid ne sait pas lire le sommeil ; Tasker est payant).
+On utilise une petite app open-source dédiée qui lit Health Connect (sommeil **avec stades**) et
+POST vers notre webhook, avec un bouton **« Test Webhook »** = ton envoi manuel.
 
-### Option A — Macrodroid (le plus simple)
+### Installation
 
-1. Installe **Macrodroid** + **Health Connect**, et autorise Macrodroid à *lire les sessions de
-   sommeil* dans Health Connect (Réglages Health Connect → Autorisations des applis).
-2. Nouvelle macro :
-   - **Déclencheur** : *Heure / Jour* → tous les jours à **10:00** (Fitbit a synchronisé la nuit).
-   - **Action 1** : *Health Connect → Lire les données → Sommeil*, plage = dernières 24 h.
-     Récupère début (`bedtime`), fin (`wakeTime`) de la session la plus longue, et le score si dispo.
-   - **Action 2** : *Requête HTTP → POST* vers l'URL, corps = le JSON du §1 en injectant les variables.
-3. Teste la macro à la main une fois. Vérifie l'onglet Sommeil.
+- Dépôt : **github.com/mcnaveen/health-connect-webhook** (152 ⭐, open-source, gratuit).
+- Télécharge le dernier **APK** dans *Releases* : `app-foss-release.apk` (ex. v1.9.20).
+- Installe-le (autorise « sources inconnues » si demandé). Android 9+ requis.
+- Astuce mises à jour : l'app **Obtainium** peut suivre ce dépôt et te notifier des nouvelles versions.
 
-### Option B — Tasker
+### Configuration (dans l'app)
 
-1. Tasker 6.3+ a l'action native **Health Connect**. Autorise la lecture du sommeil.
-2. **Profil** : Heure → 10:00.
-3. **Tâche** :
-   - `Health Connect` → *Read* → *Sleep Session*, plage dernières 24 h → variables de début/fin.
-   - `Variable Set` : formate `bedtime`/`wakeTime` en `HH:MM`, `date` en `YYYY-MM-DD` (jour du réveil).
-   - `HTTP Request` : Method `POST`, URL du §1, Header `Content-Type:application/json`,
-     Body = le JSON avec tes variables.
+1. Autorise l'app à **lire le sommeil** (et FC/HRV/SpO2/resp) dans **Health Connect**
+   (Paramètres Android → Santé Connect → Autorisations des applications).
+2. Dans l'app, onglet **Webhook / Config** :
+   - **Webhook URL** = la valeur *Webhook URL* de l'app Sport & Santé (Paramètres → Sync sommeil).
+     Elle ressemble à `https://europe-west1-sport-467df.cloudfunctions.net/hcWebhook?uid=TON_UID`.
+   - **Bearer token / Auth** = ton *jeton* (même écran).
+3. Onglet **Data Types** : coche au minimum **Sleep**, plus **Resting heart rate**, **HRV**,
+   **Oxygen saturation (SpO2)**, **Respiratory rate** si proposés.
+4. Appuie sur **Test Webhook** (ou « Sync Now »).
 
-### Gérer l'éveil et les stades (important)
+### Étape de calage (une fois)
 
-Une session de sommeil Health Connect contient des **stades** : `AWAKE`, `LIGHT`, `DEEP`, `REM`,
-`OUT_OF_BED`. Il ne faut **pas** faire simplement `fin − début` (ça compterait tes réveils
-nocturnes comme du sommeil). Formule correcte :
+La 1ʳᵉ fois, **envoie-moi le résultat** : je lis le **JSON réel** reçu dans les logs du serveur
+(`firebase functions:log --only hcWebhook`) et j'ajuste le parseur au schéma exact de ta version de
+l'app (noms de clés des stades, des constantes, présence ou non du coucher/réveil). Ensuite tout
+tombe automatiquement au bon endroit dans l'onglet Sommeil.
 
-- `bedtime` = début de session, `wakeTime` = fin de session
-- **`hoursSlept` = durée totale − (minutes `AWAKE` + `OUT_OF_BED`)** → envoie-la explicitement
-- `awakeMinutes`, `deepMinutes`, `lightMinutes`, `remMinutes` = somme des durées de chaque stade
+### Format attendu (indicatif, à confirmer au calage)
 
-Dans Macrodroid/Tasker, l'action « Lire le sommeil » renvoie généralement la liste des segments de
-stades : additionne les minutes par type. Si ton appli ne sait pas décomposer les stades, envoie au
-minimum `bedtime`/`wakeTime` + `sleepScore` (la qualité restera correcte car le score pénalise déjà
-les réveils), mais `hoursSlept` sera alors surestimé.
+```json
+{
+  "messages": [
+    {
+      "date": "2026-09-14",
+      "sleep": {
+        "total_duration_minutes": 420,
+        "sleep_stages": { "Deep sleep": 90, "Light sleep": 195, "REM sleep": 105, "Awake": 30 }
+      }
+    }
+  ]
+}
+```
 
-### Choisir la bonne session
+Le webhook calcule `hoursSlept = total − Awake` (l'éveil ne compte pas comme du sommeil), stocke les
+stades, et rattache FC repos / HRV / SpO2 / respiration s'ils sont présents. Il traite **toutes** les
+nuits reçues → si l'app envoie plusieurs jours, tes nuits manquantes se remplissent d'un coup.
 
-Health Connect peut contenir une sieste (ex. « sieste de 24 min ») en plus de la nuit.
-→ prends **la session la plus longue** des dernières 24 h, ou celle qui **finit le matin**.
-Ta Garmin Forerunner, elle, n'écrit normalement **pas** dans Health Connect (donc pas de conflit) ;
-si un jour tu vois des doublons, c'est qu'un pont Garmin→Health Connect est actif — on filtrera par source.
+Réponse du webhook : `200 {ok:true, written:["2026-09-14", …], count:N}`.
+
+### Note Garmin
+
+Ta Garmin Forerunner n'écrit normalement **pas** dans Health Connect (pas de conflit).
+Si un jour tu vois des doublons, c'est qu'un pont Garmin→Health Connect est actif — on filtrera alors par source.
 
 ---
 
 ## 4. Rattraper les nuits manquantes (depuis le 31 août)
 
-Deux façons :
-
-- **Rejouer** la macro/tâche en changeant la plage sur chaque jour manquant (fastidieux mais sûr).
-- **Google Takeout** : exporte tes données Google Health, envoie-moi le fichier sommeil,
-  je te fais un petit script d'import unique qui POST toutes les nuits d'un coup.
-
-Dis-moi laquelle tu préfères quand la sync quotidienne tournera.
+L'app envoie un **historique** de plusieurs jours en un seul « Test Webhook » si tu élargis la
+période dans ses réglages (ex. 30 derniers jours). Le webhook écrit chaque nuit à sa date → le
+rattrapage est **automatique**. À défaut, on pourra passer par un export **Google Takeout**.

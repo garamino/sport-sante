@@ -979,3 +979,111 @@ exports.sleepIngest = onRequest(
     }
   }
 );
+
+// ========== SYNC SOMMEIL — WEBHOOK app "health-connect-webhook" (mcnaveen) ==========
+// Parse le format `messages[]` de l'app Android (stades en minutes, date fournie).
+// Auth Bearer (en-tête Authorization) ou ?token= ; uid via ?uid= ou body.
+// Log le corps brut (tronqué) pour caler le parseur sur le schéma réel de l'app.
+// Tolérant : clés de constantes (FC/HRV/SpO2/resp) tentées à plusieurs endroits.
+
+exports.hcWebhook = onRequest(
+  { maxInstances: 3, timeoutSeconds: 30, region: "europe-west1", cors: true, invoker: "public" },
+  async (req, res) => {
+    if (req.method === "OPTIONS") { res.status(204).send(""); return; }
+    if (req.method !== "POST") { res.status(405).json({ error: "method_not_allowed" }); return; }
+
+    try {
+      const body = typeof req.body === "string" ? JSON.parse(req.body || "{}") : (req.body || {});
+      const uid = req.query.uid || body.uid;
+      const authHeader = req.get("authorization") || "";
+      const token = (authHeader.startsWith("Bearer ") ? authHeader.slice(7).trim() : "")
+        || req.query.token || body.secret;
+
+      // Log de calage : on veut voir le schéma réel envoyé par l'app.
+      try { console.log("hcWebhook payload:", JSON.stringify(body).slice(0, 6000)); } catch (_) {}
+
+      if (!uid || !token) { res.status(401).json({ error: "unauthorized" }); return; }
+      const cfgSnap = await db.doc(`users/${uid}/settings/sleepSync`).get();
+      const stored = cfgSnap.exists ? cfgSnap.data().token : null;
+      if (!stored || !timingSafeEqual(token, stored)) { res.status(401).json({ error: "unauthorized" }); return; }
+
+      const num = (v) => {
+        if (typeof v === "number" && isFinite(v)) return v;
+        if (typeof v === "string" && v.trim() !== "" && !isNaN(Number(v))) return Number(v);
+        return null;
+      };
+      const messages = Array.isArray(body.messages) ? body.messages
+        : Array.isArray(body) ? body : [];
+
+      const written = [];
+      for (const msg of messages.slice(0, 90)) {
+        const date = msg && typeof msg.date === "string" && DATE_RE.test(msg.date) ? msg.date : null;
+        const sleep = msg && msg.sleep;
+        if (!date || !sleep || typeof sleep !== "object") continue;
+
+        // Stades en minutes — clés de type "Deep sleep"/"Light sleep"/"REM sleep"/"Awake".
+        const stagesRaw = sleep.sleep_stages || sleep.stages || {};
+        const stageMin = (needle) => {
+          for (const k of Object.keys(stagesRaw)) {
+            if (k.toLowerCase().includes(needle)) { const v = num(stagesRaw[k]); if (v != null) return v; }
+          }
+          return null;
+        };
+        const deep = stageMin("deep");
+        const light = stageMin("light");
+        const rem = stageMin("rem");
+        const awake = stageMin("awake");
+        let total = num(sleep.total_duration_minutes);
+        if (total == null) {
+          const sum = [deep, light, rem, awake].reduce((a, b) => a + (b || 0), 0);
+          total = sum > 0 ? sum : null;
+        }
+        if (total == null) continue;
+        const asleep = Math.max(0, total - (awake || 0));
+
+        const sleepRef = db.doc(`users/${uid}/sleep/${date}`);
+        const snap = await sleepRef.get();
+        const existing = snap.exists ? snap.data() : null;
+        if (existing && !existing.autoImported) continue; // nuit manuelle : préservée
+
+        const update = {
+          date,
+          hoursSlept: Math.round((asleep / 60) * 10) / 10,
+          hoursSleptHHMM: `${String(Math.floor(asleep / 60)).padStart(2, "0")}:${String(Math.round(asleep % 60)).padStart(2, "0")}`,
+          autoImported: true,
+          autoSource: "hc-webhook",
+          autoImportedAt: FieldValue.serverTimestamp(),
+        };
+        if (deep != null) update.deepMinutes = Math.round(deep);
+        if (light != null) update.lightMinutes = Math.round(light);
+        if (rem != null) update.remMinutes = Math.round(rem);
+        if (awake != null) update.awakeMinutes = Math.round(awake);
+
+        // Coucher / réveil si l'app les fournit (clés incertaines — best effort, HH:MM).
+        const bt = sleep.bedtime || sleep.start_time_local || sleep.start;
+        const wt = sleep.wake_time || sleep.wakeTime || sleep.end_time_local || sleep.end;
+        if (typeof bt === "string" && TIME_RE.test(bt)) update.bedtime = bt;
+        if (typeof wt === "string" && TIME_RE.test(wt)) update.wakeTime = wt;
+
+        // Constantes vitales si présentes (clés incertaines — best effort).
+        const pick = (...cands) => { for (const c of cands) { const v = num(c); if (v != null) return v; } return null; };
+        const rhr = pick(msg.resting_heart_rate?.bpm, msg.resting_heart_rate?.avg_bpm, msg.resting_heart_rate);
+        const hrv = pick(msg.hrv?.rmssd, msg.heart_rate_variability?.rmssd_millis, msg.heart_rate_variability?.rmssd, msg.hrv);
+        const spo2 = pick(msg.oxygen_saturation?.percentage, msg.oxygen_saturation?.avg, msg.spo2?.avg, msg.spo2);
+        const resp = pick(msg.respiratory_rate?.rate, msg.respiratory_rate?.avg, msg.respiratory_rate);
+        if (rhr != null) update.restingHeartRate = Math.round(rhr);
+        if (hrv != null) update.hrv = Math.round(hrv * 10) / 10;
+        if (spo2 != null) update.spo2 = Math.round(spo2 * 10) / 10;
+        if (resp != null) update.respiratoryRate = Math.round(resp * 10) / 10;
+
+        await sleepRef.set(update, { merge: true });
+        written.push(date);
+      }
+
+      res.status(200).json({ ok: true, written, count: written.length });
+    } catch (e) {
+      console.error("hcWebhook error", e);
+      res.status(500).json({ error: "internal" });
+    }
+  }
+);
