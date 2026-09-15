@@ -88,7 +88,8 @@ export async function getSleep(date) {
 }
 
 export async function saveSleep(date, data) {
-  await setDoc(userDoc(`sleep/${date}`), { ...data, date, savedAt: Timestamp.now() });
+  // merge: préserve les métriques Health importées (stades, FC, VFC…) non gérées par le formulaire.
+  await setDoc(userDoc(`sleep/${date}`), { ...data, date, savedAt: Timestamp.now() }, { merge: true });
 }
 
 export async function getRecentSleep(count = 7) {

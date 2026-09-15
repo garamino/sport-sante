@@ -942,6 +942,28 @@ exports.sleepIngest = onRequest(
         autoImportedAt: FieldValue.serverTimestamp(),
       };
 
+      // Score de sommeil brut (pour info / graphiques), si fourni.
+      if (typeof sleepScore === "number" && sleepScore > 0) {
+        update.sleepScore = Math.round(sleepScore);
+      }
+
+      // Métriques Health optionnelles : on stocke ce que le téléphone sait lire.
+      // Chaque champ n'est écrit que s'il arrive comme un nombre >= 0.
+      const num = (v) => (typeof v === "number" && isFinite(v) && v >= 0 ? v : null);
+      const health = {
+        awakeMinutes: num(body.awakeMinutes),
+        deepMinutes: num(body.deepMinutes),
+        lightMinutes: num(body.lightMinutes),
+        remMinutes: num(body.remMinutes),
+        restingHeartRate: num(body.restingHeartRate),
+        hrv: num(body.hrv),
+        spo2: num(body.spo2),
+        respiratoryRate: num(body.respiratoryRate),
+      };
+      for (const [k, v] of Object.entries(health)) {
+        if (v !== null) update[k] = Math.round(v * 10) / 10;
+      }
+
       // Qualité : suggestion depuis le Sleep Score (0-100 → 1-10), seulement si absente.
       if ((existing == null || existing.quality == null) &&
           typeof sleepScore === "number" && sleepScore > 0) {

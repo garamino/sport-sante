@@ -25,6 +25,39 @@ export async function render(container, resetDate = true) {
       ...(todayIntakes?.entries || []).filter(e => e.time && e.time < NIGHT_CUTOFF),
     ].sort((a, b) => (a.time || '').localeCompare(b.time || ''));
 
+    // Bloc « Données Health » (importé via Health Connect) — affiché si des métriques existent
+    const fmtMin = m => {
+      const n = Math.round(m);
+      if (n >= 60) { const h = Math.floor(n / 60); const r = n % 60; return r ? `${h}h${String(r).padStart(2,'0')}` : `${h}h`; }
+      return `${n} min`;
+    };
+    const hasStages = ['deepMinutes','lightMinutes','remMinutes','awakeMinutes'].some(k => existing?.[k] != null);
+    const hasVitals = ['restingHeartRate','hrv','spo2','respiratoryRate'].some(k => existing?.[k] != null);
+    const stageChip = (label, key, cls) => existing?.[key] != null
+      ? `<span class="hc-stage hc-stage-${cls}"><span class="hc-stage-label">${label}</span><span class="hc-stage-val">${fmtMin(existing[key])}</span></span>` : '';
+    const vital = (label, key, unit) => existing?.[key] != null
+      ? `<div class="hc-vital"><div class="hc-vital-val">${existing[key]}<span class="hc-vital-unit">${unit}</span></div><div class="hc-vital-label">${label}</div></div>` : '';
+    const healthBlock = (existing?.autoImported && (hasStages || hasVitals)) ? `
+      <div class="hc-block">
+        <div class="hc-block-head">
+          <span>Données Health</span>
+          ${existing.sleepScore != null ? `<span class="hc-score">Score ${existing.sleepScore}</span>` : ''}
+        </div>
+        ${hasStages ? `<div class="hc-stages">
+          ${stageChip('Profond','deepMinutes','deep')}
+          ${stageChip('Léger','lightMinutes','light')}
+          ${stageChip('REM','remMinutes','rem')}
+          ${stageChip('Éveil','awakeMinutes','awake')}
+        </div>` : ''}
+        ${hasVitals ? `<div class="hc-vitals">
+          ${vital('FC repos','restingHeartRate','bpm')}
+          ${vital('VFC','hrv','ms')}
+          ${vital('SpO2','spo2','%')}
+          ${vital('Resp.','respiratoryRate','/min')}
+        </div>` : ''}
+      </div>
+    ` : '';
+
     container.innerHTML = `
       <div class="date-nav-row">
         <div class="date-nav" style="margin-bottom:0">
@@ -57,6 +90,7 @@ export async function render(container, resetDate = true) {
           <input type="text" id="sleep-hours" placeholder="Auto-calculé (HH:MM)"
                  value="${existing?.hoursSleptHHMM || ''}">
         </div>
+        ${healthBlock}
         <div class="form-group" style="position:relative">
           <label style="display:flex;align-items:center;gap:4px">
             Qualité (1-10)
@@ -345,6 +379,9 @@ export async function render(container, resetDate = true) {
         hoursSleptHHMM: hhmm,
         quality: parseInt(slider.value),
         note: document.getElementById('sleep-note').value,
+        // Saisie manuelle : la sync auto ne réécrira plus cette nuit (protège tes valeurs).
+        autoImported: false,
+        qualityAuto: false,
       };
 
       try {

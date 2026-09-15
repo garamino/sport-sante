@@ -2799,3 +2799,70 @@ textarea {
 ::-webkit-scrollbar { width: 4px; }
 ::-webkit-scrollbar-track { background: var(--bg-primary); }
 ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+
+/* ── Sommeil — Données Health (import Health Connect) ────────────────────── */
+.hc-block {
+  margin: 4px 0 16px;
+  padding: 12px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+.hc-block-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  margin-bottom: 10px;
+}
+.hc-score {
+  color: var(--accent);
+  background: rgba(79, 195, 247, .12);
+  padding: 2px 8px;
+  border-radius: 999px;
+  text-transform: none;
+  letter-spacing: 0;
+}
+.hc-stages {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+.hc-stage {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  flex: 1 1 60px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  border-left: 3px solid var(--accent);
+  background: var(--bg-card);
+}
+.hc-stage-label { font-size: 10px; color: var(--text-secondary); text-transform: uppercase; letter-spacing: .03em; }
+.hc-stage-val { font-size: 14px; font-weight: 600; color: var(--text-primary); }
+.hc-stage-deep  { border-left-color: #3f6fd6; }
+.hc-stage-light { border-left-color: #4fc3f7; }
+.hc-stage-rem   { border-left-color: #a672e0; }
+.hc-stage-awake { border-left-color: var(--warning); }
+.hc-vitals {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6px;
+}
+.hc-vital {
+  text-align: center;
+  padding: 8px 4px;
+  background: var(--bg-card);
+  border-radius: 6px;
+}
+.hc-vital-val { font-size: 16px; font-weight: 700; color: var(--text-primary); }
+.hc-vital-unit { font-size: 10px; font-weight: 500; color: var(--text-secondary); margin-left: 2px; }
+.hc-vital-label { font-size: 10px; color: var(--text-secondary); margin-top: 2px; }
+@media (max-width: 360px) {
+  .hc-vitals { grid-template-columns: repeat(2, 1fr); }
+}

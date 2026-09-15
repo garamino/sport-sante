@@ -37,8 +37,16 @@ La sync **ne touche jamais** une nuit que tu as saisie ou modifiée toi-même.
   "date": "2026-09-15",
   "bedtime": "23:40",
   "wakeTime": "07:38",
-  "hoursSlept": 7.4,
-  "sleepScore": 82
+  "hoursSlept": 7.0,
+  "sleepScore": 82,
+  "awakeMinutes": 58,
+  "deepMinutes": 82,
+  "lightMinutes": 240,
+  "remMinutes": 98,
+  "restingHeartRate": 62,
+  "hrv": 42,
+  "spo2": 97,
+  "respiratoryRate": 13
 }
 ```
 
@@ -47,10 +55,18 @@ La sync **ne touche jamais** une nuit que tu as saisie ou modifiée toi-même.
 | `uid` | oui | Ton identifiant (Paramètres → Sync sommeil) |
 | `secret` | oui | Le jeton (peut aussi être passé en header `Authorization: Bearer <jeton>`) |
 | `date` | oui | `YYYY-MM-DD` — **jour du réveil** |
-| `bedtime` | oui | `HH:MM` (24 h, heure locale) |
-| `wakeTime` | oui | `HH:MM` |
-| `hoursSlept` | non | Décimal (ex. `7.4`). Si absent → calculé de `bedtime` à `wakeTime` |
+| `bedtime` | oui | `HH:MM` (24 h, heure locale) — début de session |
+| `wakeTime` | oui | `HH:MM` — fin de session |
+| `hoursSlept` | **recommandé** | Décimal = **temps réellement dormi** (durée totale − éveil). Si absent → calculé de `bedtime` à `wakeTime` (⚠ inclut l'éveil) |
 | `sleepScore` | non | 0-100. Sert à proposer la qualité 1-10 |
+| `awakeMinutes` | non | Minutes d'éveil pendant la session |
+| `deepMinutes` / `lightMinutes` / `remMinutes` | non | Stades de sommeil (minutes) |
+| `restingHeartRate` | non | FC au repos (bpm) |
+| `hrv` | non | Variabilité cardiaque / HRV (ms) |
+| `spo2` | non | Saturation O₂ (%) |
+| `respiratoryRate` | non | Fréquence respiratoire (/min) |
+
+Tous les champs optionnels ne sont écrits que s'ils arrivent en **nombre**. Le téléphone envoie ce qu'il sait lire.
 
 Réponses : `200 {ok:true}` = écrit · `200 {ok:true,skipped:"manual"}` = nuit manuelle préservée ·
 `401` = uid/jeton faux · `400` = date/heure mal formée.
@@ -97,6 +113,21 @@ Ouvre l'onglet **Sommeil** à cette date → la nuit doit apparaître. ✅
    - `Variable Set` : formate `bedtime`/`wakeTime` en `HH:MM`, `date` en `YYYY-MM-DD` (jour du réveil).
    - `HTTP Request` : Method `POST`, URL du §1, Header `Content-Type:application/json`,
      Body = le JSON avec tes variables.
+
+### Gérer l'éveil et les stades (important)
+
+Une session de sommeil Health Connect contient des **stades** : `AWAKE`, `LIGHT`, `DEEP`, `REM`,
+`OUT_OF_BED`. Il ne faut **pas** faire simplement `fin − début` (ça compterait tes réveils
+nocturnes comme du sommeil). Formule correcte :
+
+- `bedtime` = début de session, `wakeTime` = fin de session
+- **`hoursSlept` = durée totale − (minutes `AWAKE` + `OUT_OF_BED`)** → envoie-la explicitement
+- `awakeMinutes`, `deepMinutes`, `lightMinutes`, `remMinutes` = somme des durées de chaque stade
+
+Dans Macrodroid/Tasker, l'action « Lire le sommeil » renvoie généralement la liste des segments de
+stades : additionne les minutes par type. Si ton appli ne sait pas décomposer les stades, envoie au
+minimum `bedtime`/`wakeTime` + `sleepScore` (la qualité restera correcte car le score pénalise déjà
+les réveils), mais `hoursSlept` sera alors surestimé.
 
 ### Choisir la bonne session
 
