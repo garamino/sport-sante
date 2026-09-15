@@ -1024,7 +1024,7 @@ exports.hcWebhook = onRequest(
         || req.query.token || body.secret;
       const tz = req.query.tz || "Europe/Paris";
 
-      try { console.log("hcWebhook payload:", JSON.stringify(body).slice(0, 4000)); } catch (_) {}
+      try { console.log("hcWebhook keys:", JSON.stringify(Object.keys(body))); } catch (_) {}
 
       if (!uid || !token) { res.status(401).json({ error: "unauthorized" }); return; }
       const cfgSnap = await db.doc(`users/${uid}/settings/sleepSync`).get();
@@ -1038,14 +1038,14 @@ exports.hcWebhook = onRequest(
       const spo2Arr = Array.isArray(body.oxygen_saturation) ? body.oxygen_saturation : [];
       const respArr = Array.isArray(body.respiratory_rate) ? body.respiratory_rate : [];
 
-      // Dernière valeur d'un tableau {time, [key]} dans la fenêtre [a,b].
-      const lastInWindow = (arr, key, a, b) => {
-        let v = null;
+      // Moyenne d'un tableau {time, [key]} sur la fenêtre [a,b].
+      const avgInWindow = (arr, key, a, b) => {
+        let sum = 0, n = 0;
         for (const x of arr) {
           const t = x && x.time ? ms(x.time) : null;
-          if (t != null && t >= a && t <= b && typeof x[key] === "number" && isFinite(x[key])) v = x[key];
+          if (t != null && t >= a && t <= b && typeof x[key] === "number" && isFinite(x[key])) { sum += x[key]; n++; }
         }
-        return v;
+        return n ? sum / n : null;
       };
 
       const written = [];
@@ -1093,10 +1093,10 @@ exports.hcWebhook = onRequest(
           .map(x => x.bpm);
         if (hrInWin.length) health.restingHeartRate = Math.round(Math.min(...hrInWin));
 
-        // HRV / SpO2 / resp si l'app les envoie, dernière valeur de la nuit.
-        const hrv = lastInWindow(hrvArr, "rmssd_millis", startMs, endMs);
-        const spo2 = lastInWindow(spo2Arr, "percentage", startMs, endMs);
-        const resp = lastInWindow(respArr, "rate", startMs, endMs);
+        // HRV / SpO2 / resp si l'app les envoie, moyenne sur la nuit.
+        const hrv = avgInWindow(hrvArr, "rmssd_millis", startMs, endMs);
+        const spo2 = avgInWindow(spo2Arr, "percentage", startMs, endMs);
+        const resp = avgInWindow(respArr, "rate", startMs, endMs);
         if (hrv != null) health.hrv = Math.round(hrv * 10) / 10;
         if (spo2 != null) health.spo2 = Math.round(spo2 * 10) / 10;
         if (resp != null) health.respiratoryRate = Math.round(resp * 10) / 10;
