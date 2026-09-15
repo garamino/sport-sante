@@ -37,7 +37,7 @@ export async function render(container, resetDate = true) {
       ? `<span class="hc-stage hc-stage-${cls}"><span class="hc-stage-label">${label}</span><span class="hc-stage-val">${fmtMin(existing[key])}</span></span>` : '';
     const vital = (label, key, unit) => existing?.[key] != null
       ? `<div class="hc-vital"><div class="hc-vital-val">${existing[key]}<span class="hc-vital-unit">${unit}</span></div><div class="hc-vital-label">${label}</div></div>` : '';
-    const healthBlock = (existing?.autoImported && (hasStages || hasVitals)) ? `
+    const healthBlock = (hasStages || hasVitals) ? `
       <div class="hc-block">
         <div class="hc-block-head">
           <span>Données Health</span>
