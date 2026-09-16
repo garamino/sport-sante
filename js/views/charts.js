@@ -140,6 +140,8 @@ function effectiveNight(intakeDate, time) {
 let currentSleepPeriod = '3m';
 let currentSleepProduct = 'all';
 let currentSleepQualityPeriod = '3m';
+let currentSleepSubTab = 'quality'; // 'quality' | 'phases'
+let currentSleepPhasesPeriod = '3m';
 let currentMedsView = 'products'; // 'products' | 'ingredients'
 let currentIngredientPeriod = '3m';
 let currentIngredient = 'all';
@@ -151,6 +153,7 @@ let currentHealthKey = null; // clé du biomarqueur sélectionné dans l'onglet 
 let chartInstance = null;
 let perfChartInstance = null;
 let medsChartInstance = null;
+let phasesDonutInstance = null;
 
 export async function render(container) {
   container.innerHTML = `
@@ -190,6 +193,7 @@ async function renderChart(type) {
   if (chartInstance) { chartInstance.destroy(); chartInstance = null; }
   if (perfChartInstance) { perfChartInstance.destroy(); perfChartInstance = null; }
   if (medsChartInstance) { medsChartInstance.destroy(); medsChartInstance = null; }
+  if (phasesDonutInstance) { phasesDonutInstance.destroy(); phasesDonutInstance = null; }
   if (nutChartInstance) { nutChartInstance.destroy(); nutChartInstance = null; }
 
   const chartColors = {
@@ -338,95 +342,28 @@ async function renderChart(type) {
 
     } else if (type === 'sleep') {
       area.innerHTML = `
-        <div class="period-buttons" id="sleep-quality-period-buttons"></div>
-        <div class="chart-container"><canvas id="main-chart"></canvas></div>
-        <div id="moon-icons-row" class="moon-icons-row"></div>
-        <div id="chart-empty" class="empty-state hidden">
-          <p>Pas encore de données</p>
-          <p style="font-size:13px;color:var(--text-secondary)">Commence à logger tes séances !</p>
+        <div class="chart-subtabs">
+          <button class="chart-subtab ${currentSleepSubTab === 'quality' ? 'active' : ''}" data-sub="quality">Qualité</button>
+          <button class="chart-subtab ${currentSleepSubTab === 'phases' ? 'active' : ''}" data-sub="phases">Phases</button>
         </div>
-        <div id="sleep-meds-section" style="margin-top:24px"></div>
-        <div id="moon-section" style="margin-top:24px"></div>
+        <div id="sleep-sub-area"></div>
       `;
-      const canvas = document.getElementById('main-chart');
-      const emptyEl = document.getElementById('chart-empty');
 
       const [sleepData, intakesData] = await Promise.all([
         getAllSleep(),
         getAllIntakes().catch(() => []),
       ]);
-      const allQualityData = sleepData.filter(s => s.quality);
 
-      function applySleepQualityPeriod() {
-        if (chartInstance) { chartInstance.destroy(); chartInstance = null; }
-
-        const data = filterSleepByPeriod(allQualityData, currentSleepQualityPeriod);
-
-        document.querySelectorAll('#sleep-quality-period-buttons .period-btn').forEach(btn => {
-          btn.classList.toggle('active', btn.dataset.period === currentSleepQualityPeriod);
-        });
-
-        if (data.length === 0) {
-          canvas.parentElement.classList.add('hidden');
-          emptyEl.classList.remove('hidden');
-          renderMoonIconsRow([]);
-          renderMoonSection([]);
-          return;
-        }
-        canvas.parentElement.classList.remove('hidden');
-        emptyEl.classList.add('hidden');
-
-        // Comble les jours manquants avec des barres vides (quality: null)
-        const filled = fillSleepGaps(data);
-
-        const colors = filled.map(s =>
-          s.quality == null ? 'transparent' :
-          s.quality >= 7 ? chartColors.success :
-          s.quality >= 4 ? chartColors.warning :
-          chartColors.danger
-        );
-
-        chartInstance = new Chart(canvas.getContext('2d'), {
-          type: 'bar',
-          data: {
-            labels: filled.map(s => {
-              const d = new Date(s.date + 'T00:00:00');
-              return d.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' });
-            }),
-            datasets: [{
-              label: 'Qualité',
-              data: filled.map(s => s.quality),
-              backgroundColor: colors,
-              borderRadius: 4,
-            }],
-          },
-          options: {
-            ...baseOptions,
-            scales: {
-              ...baseOptions.scales,
-              y: { ...baseOptions.scales.y, min: 0, max: 10 },
-            },
-          },
-        });
-
-        renderMoonIconsRow(filled);
-        renderMoonSection(data);
-      }
-
-      // Boutons de période
-      const pb = document.getElementById('sleep-quality-period-buttons');
-      pb.innerHTML = ['3m', '6m', 'all'].map(p =>
-        `<button class="period-btn ${p === currentSleepQualityPeriod ? 'active' : ''}" data-period="${p}">${p === 'all' ? 'Tout' : p === '3m' ? '3 mois' : '6 mois'}</button>`
-      ).join('');
-      pb.querySelectorAll('.period-btn').forEach(btn => {
-        btn.addEventListener('click', () => {
-          currentSleepQualityPeriod = btn.dataset.period;
-          applySleepQualityPeriod();
+      area.querySelectorAll('.chart-subtab').forEach(st => {
+        st.addEventListener('click', () => {
+          currentSleepSubTab = st.dataset.sub;
+          area.querySelectorAll('.chart-subtab').forEach(s =>
+            s.classList.toggle('active', s.dataset.sub === currentSleepSubTab));
+          renderSleepSubTab(sleepData, intakesData, chartColors, baseOptions);
         });
       });
 
-      applySleepQualityPeriod();
-      renderSleepMedsSection(sleepData, intakesData, chartColors, baseOptions);
+      renderSleepSubTab(sleepData, intakesData, chartColors, baseOptions);
 
     } else if (type === 'bike') {
       const workouts = await getAllWorkouts();
@@ -1198,6 +1135,260 @@ function filterSleepByPeriod(data, period) {
   const cutoff = new Date(now.getFullYear(), now.getMonth() - months, now.getDate());
   const cutoffStr = cutoff.toISOString().slice(0, 10);
   return data.filter(s => s.date >= cutoffStr);
+}
+
+// Aiguillage entre les sous-onglets Qualité / Phases (détruit les charts en cours).
+function renderSleepSubTab(sleepData, intakesData, colors, baseOptions) {
+  if (chartInstance) { chartInstance.destroy(); chartInstance = null; }
+  if (medsChartInstance) { medsChartInstance.destroy(); medsChartInstance = null; }
+  if (phasesDonutInstance) { phasesDonutInstance.destroy(); phasesDonutInstance = null; }
+  const sub = document.getElementById('sleep-sub-area');
+  if (!sub) return;
+  if (currentSleepSubTab === 'phases') {
+    renderSleepPhasesView(sub, sleepData, colors, baseOptions);
+  } else {
+    renderSleepQualityView(sub, sleepData, intakesData, colors, baseOptions);
+  }
+}
+
+// Vue « Qualité » : barres de qualité + lunes + section prises (contenu historique).
+function renderSleepQualityView(container, sleepData, intakesData, chartColors, baseOptions) {
+  container.innerHTML = `
+    <div class="period-buttons" id="sleep-quality-period-buttons"></div>
+    <div class="chart-container"><canvas id="main-chart"></canvas></div>
+    <div id="moon-icons-row" class="moon-icons-row"></div>
+    <div id="chart-empty" class="empty-state hidden">
+      <p>Pas encore de données</p>
+      <p style="font-size:13px;color:var(--text-secondary)">Commence à logger tes séances !</p>
+    </div>
+    <div id="sleep-meds-section" style="margin-top:24px"></div>
+    <div id="moon-section" style="margin-top:24px"></div>
+  `;
+  const canvas = document.getElementById('main-chart');
+  const emptyEl = document.getElementById('chart-empty');
+  const allQualityData = sleepData.filter(s => s.quality);
+
+  function applySleepQualityPeriod() {
+    if (chartInstance) { chartInstance.destroy(); chartInstance = null; }
+
+    const data = filterSleepByPeriod(allQualityData, currentSleepQualityPeriod);
+
+    document.querySelectorAll('#sleep-quality-period-buttons .period-btn').forEach(btn => {
+      btn.classList.toggle('active', btn.dataset.period === currentSleepQualityPeriod);
+    });
+
+    if (data.length === 0) {
+      canvas.parentElement.classList.add('hidden');
+      emptyEl.classList.remove('hidden');
+      renderMoonIconsRow([]);
+      renderMoonSection([]);
+      return;
+    }
+    canvas.parentElement.classList.remove('hidden');
+    emptyEl.classList.add('hidden');
+
+    // Comble les jours manquants avec des barres vides (quality: null)
+    const filled = fillSleepGaps(data);
+
+    const colors = filled.map(s =>
+      s.quality == null ? 'transparent' :
+      s.quality >= 7 ? chartColors.success :
+      s.quality >= 4 ? chartColors.warning :
+      chartColors.danger
+    );
+
+    chartInstance = new Chart(canvas.getContext('2d'), {
+      type: 'bar',
+      data: {
+        labels: filled.map(s => {
+          const d = new Date(s.date + 'T00:00:00');
+          return d.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' });
+        }),
+        datasets: [{
+          label: 'Qualité',
+          data: filled.map(s => s.quality),
+          backgroundColor: colors,
+          borderRadius: 4,
+        }],
+      },
+      options: {
+        ...baseOptions,
+        scales: {
+          ...baseOptions.scales,
+          y: { ...baseOptions.scales.y, min: 0, max: 10 },
+        },
+      },
+    });
+
+    renderMoonIconsRow(filled);
+    renderMoonSection(data);
+  }
+
+  const pb = document.getElementById('sleep-quality-period-buttons');
+  pb.innerHTML = ['3m', '6m', 'all'].map(p =>
+    `<button class="period-btn ${p === currentSleepQualityPeriod ? 'active' : ''}" data-period="${p}">${p === 'all' ? 'Tout' : p === '3m' ? '3 mois' : '6 mois'}</button>`
+  ).join('');
+  pb.querySelectorAll('.period-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      currentSleepQualityPeriod = btn.dataset.period;
+      applySleepQualityPeriod();
+    });
+  });
+
+  applySleepQualityPeriod();
+  renderSleepMedsSection(sleepData, intakesData, chartColors, baseOptions);
+}
+
+// Phases importées depuis Health : minutes par stade de sommeil.
+const SLEEP_STAGES = [
+  { key: 'deepMinutes',  label: 'Profond', color: '#3f6fd6' },
+  { key: 'lightMinutes', label: 'Léger',   color: '#4fc3f7' },
+  { key: 'remMinutes',   label: 'REM',     color: '#a672e0' },
+  { key: 'awakeMinutes', label: 'Éveil',   color: '#ffa726' },
+];
+
+function fmtStageDuration(min) {
+  const n = Math.round(min || 0);
+  if (n >= 60) { const h = Math.floor(n / 60); const r = n % 60; return r ? `${h}h${String(r).padStart(2, '0')}` : `${h}h`; }
+  return `${n} min`;
+}
+
+// Vue « Phases » : barres empilées par nuit + donut de répartition moyenne.
+function renderSleepPhasesView(container, sleepData, colors, baseOptions) {
+  // Nuits ayant au moins une phase renseignée (importées depuis Health).
+  const stageData = sleepData.filter(s => SLEEP_STAGES.some(k => s[k.key] != null));
+
+  container.innerHTML = `
+    <div class="period-buttons" id="sleep-phases-period-buttons"></div>
+    <div id="phases-summary" class="phases-summary"></div>
+    <div class="chart-container"><canvas id="phases-chart"></canvas></div>
+    <div id="phases-empty" class="empty-state hidden">
+      <p>Pas encore de données de phases</p>
+      <p style="font-size:13px;color:var(--text-secondary)">Les phases proviennent des nuits importées depuis Health.</p>
+    </div>
+  `;
+
+  function apply() {
+    if (chartInstance) { chartInstance.destroy(); chartInstance = null; }
+    if (phasesDonutInstance) { phasesDonutInstance.destroy(); phasesDonutInstance = null; }
+
+    document.querySelectorAll('#sleep-phases-period-buttons .period-btn').forEach(btn =>
+      btn.classList.toggle('active', btn.dataset.period === currentSleepPhasesPeriod));
+
+    const data = filterSleepByPeriod(stageData, currentSleepPhasesPeriod);
+    const chartWrap = container.querySelector('.chart-container');
+    const emptyEl = document.getElementById('phases-empty');
+    const summaryEl = document.getElementById('phases-summary');
+
+    if (data.length === 0) {
+      chartWrap.classList.add('hidden');
+      emptyEl.classList.remove('hidden');
+      summaryEl.innerHTML = '';
+      return;
+    }
+    chartWrap.classList.remove('hidden');
+    emptyEl.classList.add('hidden');
+
+    // Comble les jours manquants (barres vides) pour ne pas coller les nuits.
+    const filled = fillSleepGaps(data);
+
+    const datasets = SLEEP_STAGES.map(k => ({
+      label: k.label,
+      data: filled.map(s => s._placeholder ? null : (s[k.key] ?? 0)),
+      backgroundColor: k.color,
+      borderRadius: 2,
+      stack: 'sleep',
+    }));
+
+    const canvas = document.getElementById('phases-chart');
+    chartInstance = new Chart(canvas.getContext('2d'), {
+      type: 'bar',
+      data: {
+        labels: filled.map(s => {
+          const d = new Date(s.date + 'T00:00:00');
+          return d.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' });
+        }),
+        datasets,
+      },
+      options: {
+        ...baseOptions,
+        plugins: {
+          legend: { display: true, labels: { color: colors.text, usePointStyle: true, boxWidth: 8, padding: 12 } },
+          tooltip: {
+            callbacks: {
+              label: (ctx) => `${ctx.dataset.label}: ${fmtStageDuration(ctx.parsed.y)}`,
+              footer: (items) => `Total: ${fmtStageDuration(items.reduce((a, it) => a + (it.parsed.y || 0), 0))}`,
+            },
+          },
+        },
+        scales: {
+          x: { ...baseOptions.scales.x, stacked: true },
+          y: { ...baseOptions.scales.y, stacked: true, title: { display: true, text: 'minutes', color: colors.text } },
+        },
+      },
+    });
+
+    renderPhasesSummary(summaryEl, data, colors);
+  }
+
+  const pb = document.getElementById('sleep-phases-period-buttons');
+  pb.innerHTML = ['3m', '6m', 'all'].map(p =>
+    `<button class="period-btn ${p === currentSleepPhasesPeriod ? 'active' : ''}" data-period="${p}">${p === 'all' ? 'Tout' : p === '3m' ? '3 mois' : '6 mois'}</button>`
+  ).join('');
+  pb.querySelectorAll('.period-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      currentSleepPhasesPeriod = btn.dataset.period;
+      apply();
+    });
+  });
+
+  apply();
+}
+
+// Donut + légende : moyenne par phase sur la période (nuits renseignées uniquement).
+function renderPhasesSummary(el, data, colors) {
+  if (!el) return;
+
+  const avgs = SLEEP_STAGES.map(k => {
+    let total = 0, count = 0;
+    for (const s of data) if (s[k.key] != null) { total += s[k.key]; count++; }
+    return { ...k, avg: count ? total / count : 0 };
+  });
+  const grandTotal = avgs.reduce((a, k) => a + k.avg, 0);
+  const pct = v => grandTotal ? Math.round(v / grandTotal * 100) : 0;
+
+  el.innerHTML = `
+    <div class="phases-donut-wrap"><canvas id="phases-donut"></canvas></div>
+    <div class="phases-legend">
+      <div class="phases-legend-title">Moyenne / nuit</div>
+      ${avgs.map(k => `
+        <div class="phases-legend-item">
+          <span class="phases-legend-dot" style="background:${k.color}"></span>
+          <span class="phases-legend-label">${k.label}</span>
+          <span class="phases-legend-val">${fmtStageDuration(k.avg)}</span>
+          <span class="phases-legend-pct">${pct(k.avg)}%</span>
+        </div>
+      `).join('')}
+    </div>
+  `;
+
+  const canvas = document.getElementById('phases-donut');
+  phasesDonutInstance = new Chart(canvas.getContext('2d'), {
+    type: 'doughnut',
+    data: {
+      labels: avgs.map(k => k.label),
+      datasets: [{ data: avgs.map(k => k.avg), backgroundColor: avgs.map(k => k.color), borderWidth: 0 }],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: true,
+      cutout: '62%',
+      plugins: {
+        legend: { display: false },
+        tooltip: { callbacks: { label: (ctx) => `${ctx.label}: ${fmtStageDuration(ctx.parsed)} (${pct(ctx.parsed)}%)` } },
+      },
+    },
+  });
 }
 
 function renderSleepMedsSection(sleepData, intakesData, colors, baseOptions) {

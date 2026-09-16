@@ -2849,6 +2849,24 @@ textarea {
 .hc-stage-light { border-left-color: #4fc3f7; }
 .hc-stage-rem   { border-left-color: #a672e0; }
 .hc-stage-awake { border-left-color: var(--warning); }
+
+/* Stats › Sommeil › Phases : donut de répartition moyenne + légende */
+.phases-summary {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  margin: 12px 0 20px;
+  flex-wrap: wrap;
+}
+.phases-donut-wrap { width: 128px; height: 128px; flex-shrink: 0; }
+.phases-legend { display: flex; flex-direction: column; gap: 6px; flex: 1; min-width: 170px; }
+.phases-legend-title { font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: var(--text-secondary); margin-bottom: 2px; }
+.phases-legend-item { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+.phases-legend-dot { width: 10px; height: 10px; border-radius: 3px; flex-shrink: 0; }
+.phases-legend-label { color: var(--text-secondary); }
+.phases-legend-val { margin-left: auto; font-weight: 600; color: var(--text-primary); font-variant-numeric: tabular-nums; }
+.phases-legend-pct { width: 40px; text-align: right; color: var(--text-secondary); font-variant-numeric: tabular-nums; }
+
 .hc-vitals {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
