@@ -22,6 +22,7 @@ import * as hydrationView from './views/hydration.js';
 import { migrateMedsToIntakes, migrateExerciseLevels, migrateWorkoutSnapshots, migrateExtraExercises } from './migrations.js';
 import { seedLibrary } from './migrations/seed-library.js';
 import { seedIntakeProducts } from './migrations/seed-intake-products.js';
+import { dedupeIntakeProducts } from './migrations/dedupe-intake-products.js';
 
 // Register routes
 registerRoute('/login', loginView);
@@ -56,7 +57,9 @@ onAuth(async (user) => {
       .then(() => migrateWorkoutSnapshots())
       .then(() => migrateExtraExercises())
       .catch(err => console.warn('Seed library / niveaux / snapshots / exercices a échoué :', err));
-    seedIntakeProducts().catch(err => console.warn('Seed intake products a échoué :', err));
+    seedIntakeProducts()
+      .then(() => dedupeIntakeProducts())
+      .catch(err => console.warn('Seed / dedupe intake products a échoué :', err));
 
     // Callback OAuth Strava (?code=... dans l'URL)
     const urlParams = new URLSearchParams(window.location.search);
