@@ -1,7 +1,7 @@
 import { today, formatDateFR, addDays, showToast, getDefaultLevel, formatSetsReps, formatRest, formatWeight } from '../utils.js';
 import { getWorkout, saveWorkout, getExerciseHistory, getWorkoutTemplates, saveWorkoutTemplate, getWorkoutTemplate, getExercise, getExercises, getAllWorkouts } from '../db.js';
 import { getGuideKey, openExerciseGuide } from '../exercise-guide.js';
-import { importLatestCyclingActivity, importLatestStrengthActivity } from '../strava.js';
+import { importLatestCyclingActivity, importLatestStrengthActivity, importLatestCardioActivity } from '../strava.js';
 import { startSessionTimer } from '../workout-timer.js';
 
 // Niveau par défaut d'un exercice (affichage séance).
@@ -474,6 +474,12 @@ function cardioFormHTML(session) {
       ${isSkipped ? `<div class="skipped-banner">Séance non faite</div>` : ''}
 
       <div class="bike-form ${isSkipped ? 'skipped' : ''}" style="padding:10px">
+        <div style="display:flex;justify-content:flex-end;margin-bottom:8px">
+          <button class="btn btn-small btn-strava-cardio" data-session-id="${sid}" style="display:flex;align-items:center;gap:5px;font-size:12px;padding:5px 10px;background:#fc4c02;color:#fff;border:none">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M15.387 17.944l-2.089-4.116h-3.065L15.387 24l5.15-10.172h-3.066m-7.008-5.599l2.836 5.598h4.172L10.463 0l-7 13.828h4.169"/></svg>
+            Strava
+          </button>
+        </div>
         <div class="form-row">
           <div class="form-group"><label>Distance (km)</label><input type="number" id="cardio-distance-${sid}" step="0.1" placeholder="${type === 'course' ? '8' : '5'}" value="${cardio.distanceKm || ''}"></div>
           <div class="form-group"><label>Durée (min)</label><input type="number" id="cardio-duration-${sid}" placeholder="${type === 'course' ? '45' : '60'}" value="${cardio.durationMinutes || ''}"></div>
@@ -701,6 +707,36 @@ function bindSessionEvents(body, session, exercises) {
         if (bikeData.elevationGain)   card.querySelector(`#bike-elevation-${sid}`).value  = bikeData.elevationGain;
         if (bikeData.rpm)             card.querySelector(`#bike-rpm-${sid}`).value         = bikeData.rpm;
         showToast(`Importé depuis Strava : ${bikeData.stravaActivityName || 'Sortie vélo'} ✓`);
+      } catch (err) {
+        if (err.code === 'not_connected') {
+          showToast('Connecte ton compte Strava dans les paramètres ⚙️');
+        } else {
+          showToast(err.message || 'Erreur import Strava');
+        }
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = `<svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M15.387 17.944l-2.089-4.116h-3.065L15.387 24l5.15-10.172h-3.066m-7.008-5.599l2.836 5.598h4.172L10.463 0l-7 13.828h4.169"/></svg> Strava`;
+      }
+    });
+  }
+
+  // Import Strava (course à pied / marche) — remplit distance, durée, FC, calories
+  if (type === 'course' || type === 'marche') {
+    card.querySelector(`.btn-strava-cardio[data-session-id="${sid}"]`)?.addEventListener('click', async (e) => {
+      const btn = e.currentTarget;
+      btn.disabled = true;
+      btn.textContent = 'Chargement...';
+      try {
+        const cardioData = await importLatestCardioActivity(currentDate, type);
+        if (!cardioData) {
+          showToast(`Aucune ${type === 'course' ? 'course' : 'marche'} trouvée sur Strava pour cette date`);
+          return;
+        }
+        if (cardioData.distanceKm)      card.querySelector(`#cardio-distance-${sid}`).value = cardioData.distanceKm;
+        if (cardioData.durationMinutes) card.querySelector(`#cardio-duration-${sid}`).value = cardioData.durationMinutes;
+        if (cardioData.fcAvg)           card.querySelector(`#cardio-fc-${sid}`).value       = cardioData.fcAvg;
+        if (cardioData.caloriesBurned)  card.querySelector(`#cardio-kcal-${sid}`).value     = cardioData.caloriesBurned;
+        showToast(`Importé depuis Strava : ${cardioData.stravaActivityName || (type === 'course' ? 'Course' : 'Marche')} ✓`);
       } catch (err) {
         if (err.code === 'not_connected') {
           showToast('Connecte ton compte Strava dans les paramètres ⚙️');

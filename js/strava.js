@@ -110,6 +110,23 @@ export async function importLatestCyclingActivity(date) {
   };
 }
 
+// Import d'une séance cardio course à pied / marche (via Garmin → Strava).
+// Remplit les champs de cardioData : distance, durée, FC moyenne, calories.
+export async function importLatestCardioActivity(date, type = 'course') {
+  const { activities, accessToken } = await fetchDayActivities(date);
+  const act = activities.find(a => matchesType(a, type));
+  if (!act) return null;
+
+  return {
+    distanceKm:      parseFloat(((act.distance || 0) / 1000).toFixed(1)),
+    durationMinutes: Math.round((act.moving_time || act.elapsed_time || 0) / 60),
+    fcAvg:           Math.round(act.average_heartrate || 0),
+    caloriesBurned:  await fetchCalories(act.id, accessToken),
+    stravaActivityId: act.id,
+    stravaActivityName: act.name,
+  };
+}
+
 // Import d'une séance de renforcement musculaire (via Garmin → Strava).
 // Récupère durée + FC moyenne + calories mesurées (appel détaillé).
 export async function importLatestStrengthActivity(date) {
