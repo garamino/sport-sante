@@ -2,12 +2,24 @@ import { getUserProfile, saveUserProfile, saveExercise, saveWorkoutTemplate } fr
 import { buildLevelFromLegacy } from '../utils.js';
 
 // Exercices ajoutés après le seed initial (aussi rejoués sur les comptes
-// existants via la migration `addExtraExercises` de migrations.js).
-export const ADDED_EXERCISES = [
+// existants via les migrations `extraExercisesVn` de migrations.js).
+// Un nouveau lot = un nouveau tableau + une nouvelle entrée dans EXTRA_EXERCISE_BATCHES.
+export const ADDED_EXERCISES_V1 = [
   { name: 'Fentes bulgares (pied arrière surélevé sur une chaise)', muscleGroup: 'Jambes',   defaultSets: 2, defaultReps: '8',  defaultRest: '90s', notes: '8 répétitions par jambe. Nouveau — vas-y prudemment, appuie-toi à un mur pour l\'équilibre au début. Attends-toi à des courbatures : c\'est normal, c\'est nouveau.', weight: '—' },
   { name: 'Pont fessier unilatéral (une jambe)',                    muscleGroup: 'Fessiers',  defaultSets: 3, defaultReps: '10', defaultRest: '60s', notes: '10 répétitions par jambe. Beaucoup plus dur que la version à 2 jambes, et ça supprime le problème de charge à tenir.', weight: '—' },
   { name: 'Mollets une jambe',                                      muscleGroup: 'Jambes',   defaultSets: 3, defaultReps: '12', defaultRest: '60s', notes: '12 répétitions par jambe.', weight: '—' },
 ];
+
+export const ADDED_EXERCISES_V2 = [
+  { name: 'Mountain climbers', muscleGroup: 'Abdominaux', defaultSets: 3, defaultReps: '30s', defaultRest: '60s', notes: 'En planche sur les mains, ramener les genoux vers la poitrine en alternance (comme courir). Core + cardio.', weight: '—' },
+];
+
+export const EXTRA_EXERCISE_BATCHES = [
+  { flag: 'extraExercisesV1', exercises: ADDED_EXERCISES_V1 },
+  { flag: 'extraExercisesV2', exercises: ADDED_EXERCISES_V2 },
+];
+
+export const ADDED_EXERCISES = EXTRA_EXERCISE_BATCHES.flatMap(b => b.exercises);
 
 // Exercices extraits de program-data.js
 const EXERCISES = [

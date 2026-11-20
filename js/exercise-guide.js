@@ -347,6 +347,19 @@ export const EXERCISE_GUIDE = {
     ],
     tips: 'Au bord d\'une marche pour l\'amplitude. Lent et contrôlé, sans rebond. Appuie-toi à un mur pour l\'équilibre.',
   },
+
+  'mountain-climbers': {
+    muscles: 'Abdominaux, fléchisseurs de hanche, épaules, quadriceps — cardio',
+    images: [`${IMG_BASE}/Mountain_Climbers/0.jpg`, `${IMG_BASE}/Mountain_Climbers/1.jpg`],
+    steps: [
+      'Position de planche bras tendus, mains au sol sous les épaules',
+      'Corps aligné de la tête aux talons, abdos serrés',
+      'Ramener un genou vers la poitrine',
+      'Le renvoyer en arrière en ramenant l\'autre genou en même temps',
+      'Alterner rapidement, comme si tu courais, pendant le temps indiqué',
+    ],
+    tips: 'Garde les épaules au-dessus des mains et les fesses basses (pas en V). Commence lentement pour la technique, puis accélère.',
+  },
 };
 
 // Mapping nom d'exercice → clé du guide (pour les exercices Firestore qui ont des IDs auto-générés)
@@ -377,6 +390,7 @@ const GUIDE_BY_NAME = {
   'Fentes bulgares (pied arrière surélevé sur une chaise)': 'fentes-bulgares',
   'Pont fessier unilatéral (une jambe)':                    'pont-fessier-unilateral',
   'Mollets une jambe':                                      'mollets-une-jambe',
+  'Mountain climbers':                                      'mountain-climbers',
 };
 
 // Retourne la clé guide pour un exercice (fonctionne avec ID slug ou ID Firestore)

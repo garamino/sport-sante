@@ -1,6 +1,6 @@
 import { getUserProfile, saveUserProfile, getAllIntakes, getIntakes, saveIntakes, getExercises, saveExercise, getAllWorkouts, saveWorkout, getWorkoutTemplate } from './db.js';
 import { buildLevelFromLegacy } from './utils.js';
-import { ADDED_EXERCISES } from './migrations/seed-library.js';
+import { ADDED_EXERCISES, EXTRA_EXERCISE_BATCHES } from './migrations/seed-library.js';
 import { Timestamp, getFirestore, doc, deleteDoc } from 'https://www.gstatic.com/firebasejs/11.6.0/firebase-firestore.js';
 import { app } from './auth.js';
 import { getUid } from './auth.js';
@@ -147,14 +147,14 @@ export async function migrateWorkoutSnapshots() {
   await saveUserProfile({ migrations: { ...(profile?.migrations || {}), snapshotWorkoutsV1: true } });
 }
 
-// extraExercisesV1 — Ajoute les exercices d'ADDED_EXERCISES aux comptes déjà
+// extraExercisesVn — Ajoute chaque lot d'EXTRA_EXERCISE_BATCHES aux comptes déjà
 // seedés, s'ils ne sont pas déjà présents (comparaison par nom). Idempotent :
-// un exercice supprimé volontairement ne revient pas (grâce au flag).
-async function addExtraExercises() {
+// un exercice supprimé volontairement ne revient pas (un flag par lot).
+async function addExtraExercises(list = ADDED_EXERCISES) {
   const existing = await getExercises().catch(() => []);
   const byName = new Set(existing.map(e => (e.name || '').toLowerCase()));
   let added = 0;
-  for (const ex of ADDED_EXERCISES) {
+  for (const ex of list) {
     if (byName.has(ex.name.toLowerCase())) continue;
     const level = buildLevelFromLegacy(ex);
     await saveExercise({
@@ -168,16 +168,18 @@ async function addExtraExercises() {
     });
     added++;
   }
-  console.log(`[migration extraExercisesV1] ${added} exercice(s) ajouté(s)`);
+  console.log(`[migration extraExercises] ${added} exercice(s) ajouté(s)`);
   return { added };
 }
 
 export async function migrateExtraExercises() {
-  const profile = await getUserProfile().catch(() => null);
-  if (profile?.migrations?.extraExercisesV1) return;
-  console.log('[migration] démarrage extraExercisesV1...');
-  await addExtraExercises();
-  await saveUserProfile({ migrations: { ...(profile?.migrations || {}), extraExercisesV1: true } });
+  for (const batch of EXTRA_EXERCISE_BATCHES) {
+    const profile = await getUserProfile().catch(() => null);
+    if (profile?.migrations?.[batch.flag]) continue;
+    console.log(`[migration] démarrage ${batch.flag}...`);
+    await addExtraExercises(batch.exercises);
+    await saveUserProfile({ migrations: { ...(profile?.migrations || {}), [batch.flag]: true } });
+  }
 }
 
 // Outils manuels pour la console
